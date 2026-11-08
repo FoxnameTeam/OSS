@@ -536,6 +536,7 @@ do
 				return nil
 			end
 			local str2 = src:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
+			str2 = str2:gsub("d=ak%.AddSignal%(ar%.UIElements%.ContainerFrame%.ChildAdded,%s*function%(%)%s*b%.Visible=false%s*d:Disconnect%(%)%s*end%)", "d=ak.AddSignal(ar.UIElements.ContainerFrame.ChildAdded,function(c) if c~=b and c.ClassName~='UIListLayout' and c.ClassName~='UIPadding' then b.Visible=false b.Size=UDim2.new(1,0,0,0) if d then d:Disconnect() end end end)\nif #ar.Elements>0 or #ar.UIElements.ContainerFrame:GetChildren()>3 then b.Visible=false b.Size=UDim2.new(1,0,0,0) end")
 			local chunk, err = loadstring(str2)
 			if chunk then
 				return chunk
@@ -796,6 +797,77 @@ do
 		tbl3.LocalPlayer = tbl3.Movement
 		tbl3.Aim = tbl3.Combat
 		tbl3.Player = tbl3.Movement
+
+		local function fixEmptyTab(tab)
+			if not tab or typeof(tab) ~= "table" or typeof(tab.UIElements) ~= "table" then
+				return
+			end
+			local container = tab.UIElements.ContainerFrame
+			if not container or typeof(container) ~= "Instance" or not container:IsA("ScrollingFrame") then
+				return
+			end
+
+			local function checkAndHide()
+				local hasElements = (tab.Elements and #tab.Elements > 0)
+				for _, child in ipairs(container:GetChildren()) do
+					if child:IsA("GuiObject") and child.ClassName ~= "UIListLayout" and child.ClassName ~= "UIPadding" then
+						local tl = child:FindFirstChildWhichIsA("TextLabel", true)
+						local isPlaceholder = tl and string.find(string.lower(tl.Text), "empty")
+						if not isPlaceholder then
+							hasElements = true
+							break
+						end
+					end
+				end
+
+				if hasElements then
+					for _, child in ipairs(container:GetChildren()) do
+						if child:IsA("Frame") then
+							local tl = child:FindFirstChildWhichIsA("TextLabel", true)
+							if tl and string.find(string.lower(tl.Text), "empty") then
+								child.Visible = false
+								child.Size = UDim2.new(1, 0, 0, 0)
+							end
+						end
+					end
+				end
+			end
+
+			checkAndHide()
+			container.ChildAdded:Connect(function()
+				task.defer(checkAndHide)
+			end)
+		end
+
+		for _, tab in pairs(tbl3) do
+			fixEmptyTab(tab)
+		end
+
+		task.defer(function()
+			local mainBar = Window and typeof(Window.UIElements) == "table" and Window.UIElements.MainBar
+			if mainBar and typeof(mainBar) == "Instance" then
+				mainBar.DescendantAdded:Connect(function(descendant)
+					if descendant:IsA("TextLabel") and string.find(string.lower(descendant.Text), "empty") then
+						local parentFrame = descendant.Parent
+						if parentFrame and parentFrame:IsA("Frame") and parentFrame.Parent and parentFrame.Parent:IsA("ScrollingFrame") then
+							local scroller = parentFrame.Parent
+							local hasContent = false
+							for _, c in ipairs(scroller:GetChildren()) do
+								if c ~= parentFrame and c:IsA("GuiObject") and c.ClassName ~= "UIListLayout" and c.ClassName ~= "UIPadding" then
+									hasContent = true
+									break
+								end
+							end
+							if hasContent then
+								parentFrame.Visible = false
+								parentFrame.Size = UDim2.new(1, 0, 0, 0)
+							end
+						end
+					end
+				end)
+			end
+		end)
+
 		return tbl3
 	end
 
@@ -14582,16 +14654,18 @@ Hub.CoinFarm.webhookInput = Tabs.Farm:Input({
 })
 
 task.defer(function()
-	local uiElements = Hub.CoinFarm.webhookInput and Hub.CoinFarm.webhookInput.InputFrame and Hub.CoinFarm.webhookInput.InputFrame.UIElements
+	local webhookInput = Hub.CoinFarm.webhookInput
+	local inputFrame = webhookInput and typeof(webhookInput) == "table" and webhookInput.InputFrame
+	local uiElements = inputFrame and typeof(inputFrame) == "table" and inputFrame.UIElements
 	local main
 
-	if uiElements then
+	if uiElements and typeof(uiElements) == "table" then
 		main = uiElements.Main or uiElements.Container
 	else
 		main = uiElements
 	end
 
-	main = main and main:FindFirstChildWhichIsA("TextBox", true)
+	main = main and typeof(main) == "Instance" and main:FindFirstChildWhichIsA("TextBox", true)
 	if not main then
 		return
 	end
@@ -18385,7 +18459,7 @@ local function fn39()
 	local function fn50()
 		local tbl9 = {}
 		local tbl10 = {}
-		if not configManager or type(configManager.AllConfigs) ~= "function" then
+		if type(configManager) ~= "table" or type(configManager.AllConfigs) ~= "function" then
 			return tbl9
 		end
 
@@ -18685,7 +18759,7 @@ local function fn39()
 	end
 
 	local function fn66(arg)
-		if not configManager or type(configManager.CreateConfig) ~= "function" then
+		if type(configManager) ~= "table" or type(configManager.CreateConfig) ~= "function" then
 			return nil
 		end
 
