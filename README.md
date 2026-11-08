@@ -1,6 +1,6 @@
 # FoxnameTeam / OSS
 
-Open-source Foxname scripts, licensed under [GNU GPLv3](LICENSE).
+Open-source Foxname scripts.
 
 | Folder | Description |
 | --- | --- |

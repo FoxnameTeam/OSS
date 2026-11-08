@@ -29,8 +29,4 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/FoxnameTeam/OSS/main/
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
-
-Licensed under the [GNU GPLv3](LICENSE). Forks and derivatives must remain GPLv3 and keep the license header in `main.luau`.
-
 Community: https://discord.gg/v8ZPq4y2nD

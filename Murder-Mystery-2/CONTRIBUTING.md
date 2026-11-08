@@ -1,13 +1,6 @@
 # Contributing
 
-Thanks for helping out. This project is licensed under [GPLv3](LICENSE).
-
-## Licensing
-
-- By submitting a contribution you agree it is licensed under GPLv3 (or later), the same as the project.
-- Only submit code you wrote or code whose license is GPLv3-compatible. Credit its origin in the PR.
-- Keep the license header at the top of `main.luau`. Do not remove it.
-- New files need the same header.
+Thanks for helping out.
 
 ## Workflow
 

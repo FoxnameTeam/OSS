@@ -40,8 +40,3 @@ Missing hook functions disable only the features that need them. The **UNC / sUN
   ```powershell
   Select-String -Path main.luau -Pattern 'Window:Tab\(|^Tabs\.\w+:Section|Hub\.CoinFarm = '
   ```
-- Keep the license header at the top. Adding lines shifts every number below.
-
-## License
-
-GPLv3. See [LICENSE](../LICENSE) and [CONTRIBUTING.md](../CONTRIBUTING.md).

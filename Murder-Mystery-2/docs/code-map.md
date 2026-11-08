@@ -6,7 +6,7 @@ Line ranges for [`main.luau`](../main.luau) (19,547 lines). Ranges mark boundari
 
 | Lines | Block | Notes |
 | --- | --- | --- |
-| 1-19 | GPLv3 license header | Full GNU GPLv3 license notice and reminder. |
+| 1-4 | Header | Script title and Foxname team notice. |
 | 20-29 | Loading notification | `task.defer` + `StarterGui:SetCore("SendNotification")`. |
 | 31-32 | `genv` | `getgenv and getgenv() or _G`. |
 | 34-72 | Clipboard & kick helpers | `FoxnameCopyToClipboard`, `FoxnameKickPlayer`. |
