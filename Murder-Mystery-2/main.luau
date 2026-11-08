@@ -498,49 +498,105 @@ do
 			request_2 = nil
 		end
 
-		local body = nil
+		local urls = {
+			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
+			"https://fastly.jsdelivr.net/gh/Footagesus/WindUI@main/dist/main.lua",
+			"https://cdn.jsdelivr.net/gh/Footagesus/WindUI@main/dist/main.lua",
+			"https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
+		}
 
-		if request_2 then
-			local ok, result = pcall(request_2, {
-				Url = "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
-				Method = "GET",
-				Headers = { ["User-Agent"] = "hi" },
-			})
+		local cachePath = "Foxname/WindUI_cache.lua"
+		local function tryReadCache()
+			if typeof(isfile) == "function" and typeof(readfile) == "function" then
+				local ok, content = pcall(readfile, cachePath)
+				if ok and typeof(content) == "string" and #content > 400 then
+					return content
+				end
+				local ok2, content2 = pcall(readfile, "WindUI.lua")
+				if ok2 and typeof(content2) == "string" and #content2 > 400 then
+					return content2
+				end
+			end
+			return nil
+		end
 
-			body = ok and typeof(result) == "table" and (result.Body or result.body)
-			local flag6 = typeof(body) == "string" and #body > 1000
-			local v11 = nil
-
-			if not flag6 then
-				body = v11
+		local function tryWriteCache(src)
+			if typeof(writefile) == "function" and typeof(src) == "string" and #src > 400 then
+				pcall(function()
+					if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder("Foxname") then
+						makefolder("Foxname")
+					end
+					writefile(cachePath, src)
+				end)
 			end
 		end
 
-		local result
-
-		if not body then
-			local ok
-
-			ok, result = pcall(function()
-				return game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua")
-			end)
-
-			if not (ok and typeof(result) == "string" and #result > 1000) then
-				result = body
+		local function compileSource(src)
+			if typeof(src) ~= "string" or #src < 400 then
+				return nil
 			end
-		else
-			result = body
+			local str2 = src:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
+			local chunk, err = loadstring(str2)
+			if chunk then
+				return chunk
+			end
+			return nil
 		end
 
-		if typeof(result) ~= "string" or #result < 1000 then
-			error("WindUI source could not be downloaded")
-		end
+		local chunk = nil
 
-		local str2 = result:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
-		local chunk, v11 = loadstring(str2)
+		for _, url in ipairs(urls) do
+			for attempt = 1, 2 do
+				local body = nil
+				if request_2 then
+					local ok, res = pcall(request_2, {
+						Url = url,
+						Method = "GET",
+						Headers = { ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+					})
+					if ok and typeof(res) == "table" and (res.Body or res.body) then
+						local b = res.Body or res.body
+						if typeof(b) == "string" and #b > 400 then
+							body = b
+						end
+					end
+				end
+
+				if not body then
+					local ok, res = pcall(function()
+						return game:HttpGet(url)
+					end)
+					if ok and typeof(res) == "string" and #res > 400 then
+						body = res
+					end
+				end
+
+				if body then
+					chunk = compileSource(body)
+					if chunk then
+						tryWriteCache(body)
+						break
+					end
+				end
+
+				if attempt < 2 then
+					task.wait(0.15)
+				end
+			end
+			if chunk then
+				break
+			end
+		end
 
 		if not chunk then
-			error(tostring(v11))
+			local cached = tryReadCache()
+			if cached then
+				chunk = compileSource(cached)
+			end
+		end
+
+		if not chunk then
+			error("WindUI source could not be downloaded")
 		end
 
 		return chunk()
@@ -1105,7 +1161,8 @@ Hub = {
 	WalkSpeed = 16,
 }
 
-Hub.PlayerFOV = math.clamp(workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView or 70, 40, 120)
+local cameraFov = workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView
+Hub.PlayerFOV = math.clamp(type(cameraFov) == "number" and cameraFov or 70, 40, 120)
 Hub.NoclipEnabled = false
 Hub.JumpPower = 50
 Hub.InfiniteJumpEnabled = false
@@ -1146,6 +1203,9 @@ Hub.AutoShootDragState = {
 	enabled = false,
 	size = "Medium",
 	shape = "Square",
+	backgroundColor = Color3.fromRGB(18, 18, 18),
+	outlineColor = Color3.fromRGB(174, 92, 255),
+	textColor = Color3.fromRGB(240, 236, 247),
 	position = UDim2.new(0.84, 0, 0.62, 0),
 	draggable = false,
 	gui = nil,
@@ -1284,7 +1344,7 @@ Hub.Crosshair = {
 	suppressCursor = false,
 	cursorConnection = nil,
 	originalMouseIconEnabled = nil,
-	userGameSettings = UserSettings():GetService("UserGameSettings"),
+	userGameSettings = (typeof(UserSettings) == "function" and pcall(UserSettings)) and UserSettings():GetService("UserGameSettings") or nil,
 	iconModule = nil,
 	iconLoading = false,
 	icons = {
@@ -1435,6 +1495,8 @@ Hub.TouchButtons = {
 	AimToggleControl = nil,
 	FlyToggleControl = nil,
 	NoclipToggleControl = nil,
+	AutoShootToggleControl = nil,
+	ThrowKnifeToggleControl = nil,
 	Theme = {
 		backgroundColor = Color3.fromRGB(27, 24, 34),
 		accentColor = Color3.fromRGB(174, 92, 255),
@@ -5796,7 +5858,7 @@ Hub.TouchButtons.ForEachStyledButton = function(arg)
 		arg(v8, v8.button)
 	end
 
-	arg(Hub.AutoShootDragState, Hub.AutoShootTouchButton)
+	arg(Hub.AutoShootDragState, Hub.AutoShootDragState.button or Hub.AutoShootTouchButton)
 end
 
 Hub.TouchButtons.SetThemeColor = function(arg, arg2)
@@ -10588,7 +10650,7 @@ Hub.TouchButtons.Create = function(arg, name, name2, text, arg2, arg3, arg4)
 		end
 	end)
 
-	screenGui.Parent = fn12()
+	screenGui.Parent = getSafeGuiParent()
 	local textButton = Instance.new("TextButton")
 	textButton.Name = name2
 	textButton.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -10776,6 +10838,50 @@ Hub.TouchButtons.ToggleNoclipButton = function(arg)
 	end
 end
 
+Hub.TouchButtons.ToggleThrowKnifeButton = function(arg)
+	local throwKnifeButtonState = Hub.ThrowKnifeButtonState
+	throwKnifeButtonState.enabled = arg and true or false
+
+	if throwKnifeButtonState.enabled then
+		Hub.TouchButtons.Create(throwKnifeButtonState, "Foxname_MM2_ThrowKnifeButton", "ThrowKnifeButton", "Throw Knife", function()
+			return false
+		end, function()
+			if Hub.TriggerThrowKnifeInput then
+				Hub.TriggerThrowKnifeInput()
+			end
+		end, true)
+	else
+		Hub.TouchButtons.Destroy(throwKnifeButtonState)
+	end
+end
+
+Hub.TouchButtons.ToggleAutoShootButton = function(arg)
+	local autoShootDragState = Hub.AutoShootDragState
+	autoShootDragState.enabled = arg and true or false
+	Hub.AutoShootState.enabled = autoShootDragState.enabled
+
+	if autoShootDragState.enabled then
+		Hub.TouchButtons.Create(autoShootDragState, "Foxname_MM2_AutoShootButton", "AutoShootButton", "Shoot", function()
+			return false
+		end, function()
+			if Hub.TriggerAutoShootInput then
+				Hub.TriggerAutoShootInput()
+			elseif Hub.UpdateAutoShoot then
+				Hub.UpdateAutoShoot()
+			end
+		end, true)
+
+		Hub.AutoShootTouchButton = autoShootDragState.button
+	else
+		Hub.TouchButtons.Destroy(autoShootDragState)
+		Hub.AutoShootTouchButton = nil
+	end
+end
+
+Hub.TouchButtons.ToggleShootButton = Hub.TouchButtons.ToggleAutoShootButton
+Hub.ToggleThrowKnifeButton = Hub.TouchButtons.ToggleThrowKnifeButton
+Hub.ToggleAutoShoot = Hub.TouchButtons.ToggleAutoShootButton
+
 Hub.TouchButtons.RefreshQuickMenu = function()
 	local actions = Hub.QuickMenuState.actions
 	local xRay = actions.XRay
@@ -10910,7 +11016,7 @@ Hub.TouchButtons.ToggleQuickMenu = function(arg)
 		end
 	end)
 
-	screenGui.Parent = fn12()
+	screenGui.Parent = getSafeGuiParent()
 
 	local function fn35(parent, size, textSize)
 		parent.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -13400,7 +13506,7 @@ Tabs.ESP:Toggle({
 do
 	local fogColor = Lighting.FogColor
 
-	if fogColor.R + fogColor.G + fogColor.B < 0.3 then
+	if typeof(fogColor) == "Color3" and (fogColor.R + fogColor.G + fogColor.B < 0.3) then
 		fogColor = Color3.fromRGB(188, 194, 204)
 	end
 
@@ -14321,16 +14427,13 @@ task.wait(UI_BUILD_DELAY)
 
 Tabs.Combat:Section({ Title = "Sheriff", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
-tbl2.Sheriff:Toggle({
+Hub.TouchButtons.AutoShootToggleControl = tbl2.Sheriff:Toggle({
 	Title = "Auto Shoot Button",
 	Flag = "Sheriff_AutoShootButton",
 	Desc = "You need a GUN for this",
+	Default = Hub.AutoShootDragState.enabled,
 	Callback = function(arg)
-		Hub.AutoShootState.enabled = arg and true or false
-
-		if Hub.ToggleAutoShoot then
-			Hub.ToggleAutoShoot(arg)
-		end
+		Hub.TouchButtons.ToggleAutoShootButton(arg)
 	end,
 })
 
@@ -16634,18 +16737,27 @@ do
 			end
 		end
 
+		if not v12 then
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= localPlayer and player.Character and fn26(player) then
+					local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+
+					if humanoidRootPart then
+						local magnitude = (character_.Position - humanoidRootPart.Position).Magnitude
+
+						if magnitude < huge then
+							huge = magnitude
+							v12 = player
+						end
+					end
+				end
+			end
+		end
+
 		return v12
 	end
 
 	local function fn51(arg)
-		if fn28(localPlayer) ~= "Murderer" then
-			if not arg then
-				WindUI:Notify({ Title = "Error", Content = "You must be Murderer for this", Icon = "x", Duration = 1.5 })
-			end
-
-			return false
-		end
-
 		local character_ = localPlayer.Character
 		local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
 		local humanoidRootPart = character_ and character_:FindFirstChild("HumanoidRootPart")
@@ -16660,9 +16772,18 @@ do
 
 			if backpack then
 				humanoid:EquipTool(backpack)
-				task.wait()
-				knife = character_:FindFirstChild("Knife")
+				task.wait(0.05)
+				knife = character_:FindFirstChild("Knife") or backpack
 			end
+		end
+
+		local isMurderer = fn28(localPlayer) == "Murderer" or knife ~= nil or (localPlayer:FindFirstChildOfClass("Backpack") and localPlayer.Backpack:FindFirstChild("Knife") ~= nil)
+		if not isMurderer then
+			if not arg then
+				WindUI:Notify({ Title = "Error", Content = "You must be Murderer for this", Icon = "x", Duration = 1.5 })
+			end
+
+			return false
 		end
 
 		if not knife then
@@ -16691,13 +16812,8 @@ do
 		local rightHand = character_:FindFirstChild("RightHand") or character_:FindFirstChild("Right Arm")
 		local position = rightHand and rightHand.Position or humanoidRootPart.Position
 		local moveDirection = humanoid2 and humanoid2.MoveDirection or Vector3.new()
-		local n2 = Hub.AutoShootState.offset + 1
+		local n2 = (Hub.AutoShootState and Hub.AutoShootState.offset or 2.8) + 1
 		local n3 = humanoidRootPart2.Position + humanoidRootPart2.AssemblyLinearVelocity * Vector3.new(0.75, 0.5, 0.75) * n2 / 15 + moveDirection * n2
-
-		if fn6(v12) and not isOwner then
-			n3 = humanoidRootPart.Position - humanoidRootPart.CFrame.LookVector * 120 + Vector3.new(0, 60, 0)
-			fn7("kill")
-		end
 
 		if Hub.ThrowKnifeButtonState.mode == "Behind Walls" then
 			local unit
@@ -16729,9 +16845,11 @@ do
 			return false
 		end
 
+		local handle = knife:FindFirstChild("Handle")
+		local originCFrame = handle and handle.CFrame or CFrame.new(position)
+
 		local ok = pcall(function()
-			local cframe = CFrame.new
-			knifeThrown:FireServer(CFrame.new(position), cframe(n3))
+			knifeThrown:FireServer(originCFrame, CFrame.new(n3))
 		end)
 
 		if not ok and not arg then
@@ -16742,107 +16860,11 @@ do
 	end
 
 	local function fn52()
-		local throwKnifeButtonState = Hub.ThrowKnifeButtonState
-
-		if throwKnifeButtonState.beginConn then
-			throwKnifeButtonState.beginConn:Disconnect()
-			throwKnifeButtonState.beginConn = nil
-		end
-
-		if throwKnifeButtonState.inputConn then
-			throwKnifeButtonState.inputConn:Disconnect()
-			throwKnifeButtonState.inputConn = nil
-		end
-
-		if throwKnifeButtonState.globalConn then
-			throwKnifeButtonState.globalConn:Disconnect()
-			throwKnifeButtonState.globalConn = nil
-		end
-
-		if throwKnifeButtonState.endConn then
-			throwKnifeButtonState.endConn:Disconnect()
-			throwKnifeButtonState.endConn = nil
-		end
-
-		throwKnifeButtonState.input = nil
-		throwKnifeButtonState.start = nil
-		throwKnifeButtonState.startPos = nil
-		throwKnifeButtonState.dragging = false
-
-		if throwKnifeButtonState.button then
-			throwKnifeButtonState.position = throwKnifeButtonState.button.Position
-			throwKnifeButtonState.button:Destroy()
-			throwKnifeButtonState.button = nil
-		end
-
-		if throwKnifeButtonState.gui then
-			throwKnifeButtonState.gui:Destroy()
-			throwKnifeButtonState.gui = nil
-		end
+		Hub.TouchButtons.Destroy(Hub.ThrowKnifeButtonState)
 	end
 
 	local function fn53()
-		local throwKnifeButtonState = Hub.ThrowKnifeButtonState
-		if throwKnifeButtonState.gui and throwKnifeButtonState.gui.Parent and throwKnifeButtonState.button and throwKnifeButtonState.button.Parent then
-			return
-		end
-		fn52()
-		local screenGui = Instance.new("ScreenGui")
-		screenGui.Name = "Foxname_MM2_ThrowKnifeButton"
-		screenGui.ResetOnSpawn = false
-		screenGui.IgnoreGuiInset = true
-		screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-		screenGui.DisplayOrder = 999997
-
-		pcall(function()
-			if syn and syn.protect_gui then
-				syn.protect_gui(screenGui)
-			elseif protect_gui then
-				protect_gui(screenGui)
-			end
-		end)
-
-		screenGui.Parent = fn12()
-		local textButton = Instance.new("TextButton")
-		textButton.Name = "ThrowKnifeButton"
-		textButton.AnchorPoint = Vector2.new(0.5, 0.5)
-		textButton.Position = throwKnifeButtonState.position
-		textButton.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-		textButton.BackgroundTransparency = 0.35
-		textButton.BorderSizePixel = 0
-		textButton.Text = "Throw Knife"
-		textButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-		textButton.Font = Enum.Font.GothamBold
-		textButton.AutoButtonColor = true
-		textButton.Active = true
-		textButton.ZIndex = 30
-		textButton.Parent = screenGui
-		Hub.TouchButtons.ApplySize(textButton, throwKnifeButtonState.size, throwKnifeButtonState.shape)
-		local uiCorner = Instance.new("UICorner")
-		uiCorner.CornerRadius = UDim.new(0, 12)
-		uiCorner.Parent = textButton
-		local uiStroke = Instance.new("UIStroke")
-		uiStroke.Thickness = 1.5
-		uiStroke.Color = Color3.fromRGB(255, 255, 255)
-		uiStroke.Transparency = 0.4
-		uiStroke.Parent = textButton
-		Hub.TouchButtons.ApplySize(textButton, throwKnifeButtonState.size, throwKnifeButtonState.shape)
-		Hub.TouchButtons.ApplyAppearance(textButton, throwKnifeButtonState)
-		Hub.TouchButtons.DecorateActionButton(textButton, throwKnifeButtonState, "Throw Knife")
-
-		textButton.Activated:Connect(function()
-			if Hub.TouchButtons.ShouldSuppressActivation(throwKnifeButtonState) then
-				return
-			end
-
-			if Hub.TriggerThrowKnifeInput then
-				Hub.TriggerThrowKnifeInput()
-			end
-		end)
-
-		Hub.TouchButtons.BindHoldDrag(throwKnifeButtonState, textButton, "position")
-		throwKnifeButtonState.gui = screenGui
-		throwKnifeButtonState.button = textButton
+		Hub.TouchButtons.ToggleThrowKnifeButton(true)
 	end
 
 	Hub.TriggerThrowKnifeInput = function()
@@ -16863,13 +16885,7 @@ do
 	end
 
 	Hub.ToggleThrowKnifeButton = function(arg)
-		Hub.ThrowKnifeButtonState.enabled = arg and true or false
-
-		if Hub.ThrowKnifeButtonState.enabled then
-			fn53()
-		else
-			fn52()
-		end
+		Hub.TouchButtons.ToggleThrowKnifeButton(arg)
 	end
 
 	task.wait(UI_BUILD_DELAY)
@@ -17693,14 +17709,12 @@ tbl2.Murderer:Button({
 	end,
 })
 
-tbl2.Murderer:Toggle({
+Hub.TouchButtons.ThrowKnifeToggleControl = tbl2.Murderer:Toggle({
 	Title = "Throw Knife Button",
 	Flag = "Murderer_ThrowKnifeButton",
-	Default = false,
+	Default = Hub.ThrowKnifeButtonState.enabled,
 	Callback = function(arg)
-		if Hub.ToggleThrowKnifeButton then
-			Hub.ToggleThrowKnifeButton(arg)
-		end
+		Hub.TouchButtons.ToggleThrowKnifeButton(arg)
 	end,
 })
 
@@ -19253,18 +19267,6 @@ do
 			return false
 		end
 
-		if fn6(arg2) and not isOwner then
-			local humanoidRootPart = character_:FindFirstChild("HumanoidRootPart")
-			if not humanoidRootPart then
-				return false
-			end
-			fn7("shoot")
-			local v9 = fn43
-			local n2 = humanoidRootPart.Position - humanoidRootPart.CFrame.LookVector * 140 + Vector3.new(0, 80, 0)
-			arg = arg or Hub.AutoShootState.mode
-			return v9(n2, arg)
-		end
-
 		local character_2 = arg2.Character
 		local humanoid = character_2:FindFirstChildOfClass("Humanoid")
 		if humanoid and humanoid.Health <= 0 then
@@ -19322,25 +19324,7 @@ do
 	end
 
 	Hub.ToggleAutoShoot = function(arg)
-		local autoShootDragState = Hub.AutoShootDragState
-		autoShootDragState.enabled = arg and true or false
-
-		if autoShootDragState.enabled then
-			Hub.TouchButtons.Create(autoShootDragState, "Foxname_MM2_AutoShootButton", "AutoShootButton", "Shoot", function()
-				return false
-			end, function()
-				if Hub.TriggerAutoShootInput then
-					Hub.TriggerAutoShootInput()
-				elseif Hub.UpdateAutoShoot then
-					Hub.UpdateAutoShoot()
-				end
-			end, true)
-
-			Hub.AutoShootTouchButton = autoShootDragState.button
-		else
-			Hub.TouchButtons.Destroy(autoShootDragState)
-			Hub.AutoShootTouchButton = nil
-		end
+		Hub.TouchButtons.ToggleAutoShootButton(arg)
 	end
 
 	Hub.CoinFarm.shootMurderer = function(arg)
