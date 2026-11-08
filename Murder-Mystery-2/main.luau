@@ -1692,6 +1692,7 @@ Hub.SetXPFarmTimerForced = nil
 Hub.UpdateRoundTimer = nil
 Hub.MobileRoundTimerGui = nil
 Hub.AvoidMurderer = { enabled = false, distance = 35, nextTeleportAt = 0, accumulator = 0, connection = nil }
+Hub.AutoMapVote = { enabled = false, board = "Board 1", thread = nil, control = nil, boardControl = nil }
 local VirtualUser = nil
 
 pcall(function()
@@ -16429,6 +16430,179 @@ do
 		return false
 	end
 
+	local function resolveVotePads()
+		local lobbyNames = { "Lobby", "NormalLobby", "SummerLobby", "HalloweenLobby", "ChristmasLobby", "EasterLobby" }
+		for _, name in ipairs(lobbyNames) do
+			local lob = workspace:FindFirstChild(name)
+			if lob then
+				local vp = lob:FindFirstChild("VotePads")
+				if vp then
+					return vp
+				end
+			end
+		end
+		return workspace:FindFirstChild("VotePads", true)
+	end
+
+	local function resolveVotingPad(selection)
+		local vp = resolveVotePads()
+		if not vp then
+			return nil
+		end
+		local str = tostring(selection or "1")
+		local num = str:match("%d") or "1"
+		return vp:FindFirstChild("VotePad" .. num)
+	end
+
+	local function getBoardCFrame(pad)
+		if not pad then
+			return nil
+		end
+		local padPart = pad:FindFirstChild("Pad")
+		if not padPart or not padPart:IsA("BasePart") then
+			return nil
+		end
+		local adornee = pad:FindFirstChild("MapInfoGui") and pad.MapInfoGui.Adornee
+		local targetPos = padPart.Position + Vector3.new(0, 3, 0)
+		if adornee and adornee:IsA("BasePart") then
+			return CFrame.lookAt(targetPos, Vector3.new(adornee.Position.X, targetPos.Y, adornee.Position.Z))
+		end
+		return padPart.CFrame + Vector3.new(0, 3, 0)
+	end
+
+	local function getPadVotes(pad)
+		if not pad then
+			return 0
+		end
+		local vi = pad:FindFirstChild("VoteInfoGui")
+		local container = vi and vi:FindFirstChild("Container")
+		local votesLabel = container and container:FindFirstChild("Votes")
+		if votesLabel and votesLabel:IsA("TextLabel") then
+			local num = tonumber(votesLabel.Text:match("%d+"))
+			return num or 0
+		end
+		return 0
+	end
+
+	local function isVotingActive()
+		local vp = resolveVotePads()
+		if not vp then
+			return false
+		end
+		for _, pad in ipairs(vp:GetChildren()) do
+			local vi = pad:FindFirstChild("VoteInfoGui")
+			if vi and vi:IsA("SurfaceGui") and vi.Enabled then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function teleportToVotePad(cf)
+		local character_ = localPlayer.Character
+		local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+		local humanoidRootPart = character_ and character_:FindFirstChild("HumanoidRootPart")
+		if not character_ or not humanoid or humanoid.Health <= 0 or not humanoidRootPart then
+			return false
+		end
+		pcall(function()
+			humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+			humanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+			character_:PivotTo(cf)
+			humanoidRootPart.CFrame = cf
+		end)
+		return true
+	end
+
+	local function resetCharacterForVote()
+		local character_ = localPlayer.Character
+		local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health > 0 then
+			pcall(function()
+				humanoid.Health = 0
+			end)
+			if humanoid.Health > 0 then
+				pcall(function()
+					character_:BreakJoints()
+				end)
+			end
+		end
+	end
+
+	local function waitForRespawn(timeout)
+		local deadline = os.clock() + (timeout or 6)
+		while os.clock() < deadline and Hub.AutoMapVote.enabled do
+			local character_ = localPlayer.Character
+			local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+			local humanoidRootPart = character_ and character_:FindFirstChild("HumanoidRootPart")
+			if character_ and humanoid and humanoidRootPart and humanoid.Health > 0 then
+				task.wait(0.12)
+				return character_
+			end
+			task.wait(0.05)
+		end
+		return localPlayer.Character
+	end
+
+	local function runAutoMapVoteCycle()
+		while Hub.AutoMapVote.enabled do
+			if not isVotingActive() then
+				task.wait(0.5)
+				continue
+			end
+
+			local pad = resolveVotingPad(Hub.AutoMapVote.board)
+			if not pad then
+				task.wait(0.5)
+				continue
+			end
+
+			local cf = getBoardCFrame(pad)
+			if not cf then
+				task.wait(0.5)
+				continue
+			end
+
+			local startVotes = getPadVotes(pad)
+			teleportToVotePad(cf)
+
+			local voteRose = false
+			local waitStart = os.clock()
+			while Hub.AutoMapVote.enabled and isVotingActive() and (os.clock() - waitStart < 3) do
+				if getPadVotes(pad) > startVotes then
+					voteRose = true
+					break
+				end
+				if os.clock() - waitStart > 1.2 then
+					teleportToVotePad(cf)
+				end
+				task.wait(0.05)
+			end
+
+			if voteRose and Hub.AutoMapVote.enabled and isVotingActive() then
+				resetCharacterForVote()
+				waitForRespawn(6)
+			else
+				task.wait(0.2)
+			end
+		end
+	end
+
+	local function teleportToVotingBoard()
+		local pad = resolveVotingPad(Hub.AutoMapVote.board)
+		local cf = getBoardCFrame(pad)
+		if cf then
+			local mapName = pad:FindFirstChild("VoteInfoGui") and pad.VoteInfoGui:FindFirstChild("Container") and pad.VoteInfoGui.Container:FindFirstChild("MapName") and pad.VoteInfoGui.Container.MapName.Text
+			local label = Hub.AutoMapVote.board
+			if mapName and mapName ~= "" then
+				label ..= " (" .. mapName .. ")"
+			end
+			return fn40(cf, label)
+		end
+		WindUI:Notify({ Title = "Error", Content = "Voting board not found.", Icon = "x", Duration = 2 })
+		return false
+	end
+
 	local function fn45(arg)
 		local v9 = Players:FindFirstChild(arg)
 		if not v9 or not v9.Character then
@@ -16929,6 +17103,44 @@ do
 		Title = "TP to Game Arena",
 		Callback = function()
 			fn44()
+		end,
+	})
+
+	Tabs.Teleports:Button({
+		Title = "TP to Voting Board",
+		Callback = function()
+			teleportToVotingBoard()
+		end,
+	})
+
+	Tabs.Teleports:Divider()
+
+	Hub.AutoMapVote.control = Tabs.Teleports:Toggle({
+		Title = "Auto Map Vote",
+		Flag = "Teleports_AutoMapVote",
+		Default = false,
+		Callback = function(arg)
+			Hub.AutoMapVote.enabled = arg and true or false
+			if Hub.AutoMapVote.enabled then
+				if not Hub.AutoMapVote.thread then
+					Hub.AutoMapVote.thread = task.spawn(function()
+						runAutoMapVoteCycle()
+						Hub.AutoMapVote.thread = nil
+					end)
+				end
+			else
+				Hub.AutoMapVote.thread = nil
+			end
+		end,
+	})
+
+	Hub.AutoMapVote.boardControl = Tabs.Teleports:Dropdown({
+		Title = "Voting Board",
+		Flag = "Teleports_VotingBoard",
+		Values = { "Board 1", "Board 2", "Board 3" },
+		Value = Hub.AutoMapVote.board,
+		Callback = function(arg)
+			Hub.AutoMapVote.board = arg or "Board 1"
 		end,
 	})
 
