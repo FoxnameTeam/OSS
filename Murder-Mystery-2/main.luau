@@ -105,12 +105,10 @@ do
 	foxnameMM2Runtime.sessionId = sessionId
 	local HttpService = game:GetService("HttpService")
 
-	if syn and type(syn.request) == "function" then
-		request_ = syn.request
+	if type(request) == "function" then
+		request_ = request
 	elseif type(http_request) == "function" then
 		request_ = http_request
-	elseif type(request) == "function" then
-		request_ = request
 	end
 
 	local function fn17()
@@ -127,7 +125,7 @@ do
 			end
 		end)
 
-		local flag6 = type(request) == "function" or type(http_request) == "function" or type(syn) == "table" and type(syn.request) == "function"
+		local flag6 = type(request) == "function" or type(http_request) == "function"
 		local websocket_ = type(WebSocket) == "table" and WebSocket
 		local flag7 = type(websocket_) == "table"
 
@@ -135,15 +133,7 @@ do
 			flag7 = type(websocket_.connect or websocket_.Connect) == "function"
 		end
 
-		local flag8 = type(queue_on_teleport) == "function"
-
-		if not flag8 then
-			flag8 = type(syn) == "table"
-
-			if flag8 then
-				flag8 = type(syn.queue_on_teleport or syn.queueonteleport) == "function"
-			end
-		end
+		local flag8 = type(queueonteleport) == "function" or type(queue_on_teleport) == "function"
 
 		local flag9 = type(readfile) == "function" and type(writefile) == "function" and type(makefolder) == "function" and type(isfile) == "function" and type(isfolder) == "function" and type(delfile) == "function"
 		local v10 = v9
@@ -488,12 +478,10 @@ do
 
 		local request_2
 
-		if typeof(http_request) == "function" then
-			request_2 = http_request
-		elseif typeof(request) == "function" then
+		if typeof(request) == "function" then
 			request_2 = request
-		elseif typeof(syn) == "table" and typeof(syn.request) == "function" then
-			request_2 = syn.request
+		elseif typeof(http_request) == "function" then
+			request_2 = http_request
 		else
 			request_2 = nil
 		end
@@ -1004,7 +992,7 @@ do
 		if v10.score >= 100 and not arg2 then
 			return true
 		end
-		local request_2 = type(request) == "function" and request or type(http_request) == "function" and http_request or type(syn) == "table" and type(syn.request) == "function" and syn.request
+		local request_2 = type(request) == "function" and request or type(http_request) == "function" and http_request or nil
 		if type(request_2) ~= "function" then
 			return false
 		end
@@ -1231,6 +1219,7 @@ Hub = {
 	FlyEnabled = false,
 	FlySpeed = 50,
 	WalkSpeed = 16,
+	inLobby = false,
 }
 
 local cameraFov = workspace.CurrentCamera and workspace.CurrentCamera.FieldOfView
@@ -1650,8 +1639,16 @@ Hub.CoinFarm = {
 	enabled = false,
 	mode = "CFrame",
 	position = "Normal",
+	movementMode = "Stop and Go",
+	movementModeControl = nil,
+	nextCoin = nil,
 	speed = 28,
 	speedControl = nil,
+	lobbyFarmEnabled = false,
+	lobbyFarmControl = nil,
+	currentCFrame = nil,
+	touchedCoins = {},
+	teleportHistory = {},
 	blackScreenEnabled = false,
 	disable3DRendering = false,
 	blackScreenGui = nil,
@@ -1673,6 +1670,10 @@ Hub.CoinFarm = {
 	contactAttempts = {},
 	coinVisualParts = setmetatable({}, { __mode = "k" }),
 	currentCoin = nil,
+	candidatePoolSize = 3,
+	candidateMaxDistanceDelta = nil,
+	useRandomCoinSelection = false,
+	selectCoinCandidate = nil,
 	indexedMap = nil,
 	indexedCoinContainer = nil,
 	mapAddedConnection = nil,
@@ -1687,6 +1688,7 @@ Hub.CoinFarm = {
 	serverHopPlayerThreshold = 4,
 	serverHopRunning = false,
 	serverHopCount = 0,
+	serverHopTimerEnabled = false,
 	serverHopTimerMinutes = 15,
 	serverHopTimerStartedAt = 0,
 	resumedFromServerHop = false,
@@ -1697,6 +1699,7 @@ Hub.CoinFarm = {
 	bagWebhookSent = false,
 	serverHopControl = nil,
 	serverHopThresholdControl = nil,
+	serverHopTimerToggle = nil,
 	serverHopTimerControl = nil,
 	antiBotEnabled = false,
 	antiBotControl = nil,
@@ -1715,8 +1718,11 @@ Hub.CoinFarm = {
 	endRoundRespawnRetryRunning = false,
 	endRoundRespawnRetryGeneration = 0,
 	lastLocalDead = false,
+	endRoundMode = "Normal (shooting)",
+	endRoundModeControl = nil,
 	flingMurderer = nil,
 	flingSheriff = nil,
+	flingAll = nil,
 	getSheriffFlingTarget = nil,
 	sheriffFlingRunning = false,
 	sheriffFlingBlocking = false,
@@ -1736,6 +1742,7 @@ Hub.CoinFarm = {
 	murdererNearRange = 30,
 	nextMurdererCheckAt = 0,
 	nextMurdererEscapeAt = 0,
+	evasionGraceUntil = 0,
 	escapeCoin = nil,
 	escapeUnderActive = false,
 	activeTween = nil,
@@ -2359,6 +2366,7 @@ Hub.CoinFarm.DisconnectMap = function()
 	table.clear(Hub.CoinFarm.contactAttempts)
 	table.clear(Hub.CoinFarm.coinVisualParts)
 	Hub.CoinFarm.currentCoin = nil
+	Hub.CoinFarm.nextCoin = nil
 	Hub.CoinFarm.escapeCoin = nil
 	Hub.CoinFarm.escapeUnderActive = false
 	Hub.CoinFarm.indexedMap = nil
@@ -2510,6 +2518,60 @@ Hub.CoinFarm.EnableUnder = function(underCharacter, arg, arg2)
 	end
 end
 
+Hub.GetLobbyCFrame = function()
+	local spawns = workspace:FindFirstChild("Spawns")
+	if spawns then
+		local lobbySpawn = spawns:FindFirstChild("LobbySpawn")
+		if lobbySpawn and lobbySpawn.CFrame then
+			return lobbySpawn.CFrame, "LobbySpawn"
+		end
+		local spawnLoc = spawns:FindFirstChildOfClass("SpawnLocation")
+		if spawnLoc and spawnLoc.CFrame then
+			return spawnLoc.CFrame, "Spawns"
+		end
+	end
+
+	local seasonalLobbyNames = {
+		"SummerLobby",
+		"Lobby",
+		"NormalLobby",
+		"HalloweenLobby",
+		"ChristmasLobby",
+		"EasterLobby",
+	}
+
+	for _, name in ipairs(seasonalLobbyNames) do
+		local lob = workspace:FindFirstChild(name)
+		if lob then
+			local lSpawns = lob:FindFirstChild("Spawns")
+			if lSpawns then
+				local sl = lSpawns:FindFirstChild("LobbySpawn") or lSpawns:FindFirstChildOfClass("SpawnLocation") or lSpawns:FindFirstChildWhichIsA("BasePart")
+				if sl and sl.CFrame then
+					return sl.CFrame + Vector3.new(0, 3.5, 0), "Lobby Spawns"
+				end
+			end
+			local nikilis = lob:FindFirstChild("Lobby") and lob.Lobby:FindFirstChild("Nikilis")
+			if nikilis and (nikilis:IsA("BasePart") or nikilis:IsA("Model")) then
+				local pivot = nikilis:IsA("Model") and (nikilis.GetPivot and nikilis:GetPivot() or nikilis.CFrame) or nikilis.CFrame
+				return pivot + Vector3.new(0, 3.5, 0), "Nikilis Lobby"
+			end
+			local inner = lob:FindFirstChild("Lobby") or lob
+			local bp = inner:IsA("BasePart") and inner or inner:FindFirstChildWhichIsA("BasePart", true)
+			if bp and bp.CFrame then
+				return bp.CFrame + Vector3.new(0, 5, 0), "Lobby"
+			end
+		end
+	end
+
+	for _, desc in ipairs(workspace:GetDescendants()) do
+		if desc:IsA("SpawnLocation") and (desc.Parent and string.find(string.lower(desc.Parent.Name), "spawn") or desc.Position.Y < -50) then
+			return desc.CFrame + Vector3.new(0, 3.5, 0), "Lobby Spawn"
+		end
+	end
+
+	return CFrame.new(0, 50, 0), "Fallback Origin"
+end
+
 Hub.CoinFarm.ResolveMap = function()
 	local currentMapInstance = Hub.RoundState.currentMapInstance
 	if currentMapInstance and currentMapInstance.Parent and currentMapInstance:IsDescendantOf(workspace) then
@@ -2610,17 +2672,67 @@ end
 
 Hub.CoinFarm.GetMurdererRoot = function()
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= localPlayer and Hub.CoinFarm.GetCachedRole(player) == "Murderer" then
-			local character_ = player.Character
-			local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
-			character_ = character_ and character_:FindFirstChild("HumanoidRootPart")
-			if humanoid and humanoid.Health > 0 and character_ then
-				return character_
+		if player ~= localPlayer then
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if humanoid and humanoid.Health > 0 and root then
+				local hasKnife = character:FindFirstChild("Knife") ~= nil
+				if not hasKnife then
+					local backpack = player:FindFirstChildOfClass("Backpack")
+					hasKnife = backpack and backpack:FindFirstChild("Knife") ~= nil
+				end
+				if hasKnife or Hub.CoinFarm.GetCachedRole(player) == "Murderer" then
+					return root
+				end
 			end
 		end
 	end
 
 	return nil
+end
+
+Hub.CoinFarm.GetMapSpawns = function(map)
+	local spawns = {}
+	local spawnsFolder = (map and (map:FindFirstChild("Spawns") or map:FindFirstChild("SpawnPoints")))
+		or workspace:FindFirstChild("Spawns")
+		or workspace:FindFirstChild("SpawnPoints")
+	if spawnsFolder then
+		for _, child in ipairs(spawnsFolder:GetChildren()) do
+			if child:IsA("BasePart") then
+				table.insert(spawns, child)
+			end
+		end
+	end
+	if #spawns == 0 and map then
+		for _, descendant in ipairs(map:GetDescendants()) do
+			if descendant:IsA("BasePart") and (descendant.Name == "Spawn" or descendant.Name == "SpawnLocation" or descendant:IsA("SpawnLocation")) then
+				table.insert(spawns, descendant)
+			end
+		end
+	end
+	if #spawns == 0 then
+		for _, descendant in ipairs(workspace:GetDescendants()) do
+			if descendant:IsA("SpawnLocation") or (descendant:IsA("BasePart") and (descendant.Name == "Spawn" or descendant.Name == "SpawnLocation")) then
+				table.insert(spawns, descendant)
+			end
+		end
+	end
+	return spawns
+end
+
+Hub.CoinFarm.GetFurthestSpawn = function(map, fromPosition)
+	local spawns = Hub.CoinFarm.GetMapSpawns(map)
+	local maxDist = -math.huge
+	local bestSpawn = nil
+	for _, spawnPart in ipairs(spawns) do
+		local dist = (spawnPart.Position - fromPosition).Magnitude
+		if dist > maxDist then
+			maxDist = dist
+			bestSpawn = spawnPart
+		end
+	end
+	return bestSpawn
 end
 
 Hub.CoinFarm.RunInitialSafety = function(arg)
@@ -2656,26 +2768,14 @@ Hub.CoinFarm.RunInitialSafety = function(arg)
 	if not indexedMap then
 		return true
 	end
-	local n2 = -math.huge
-	local v9 = nil
-
-	for _, descendant in ipairs(indexedMap:GetDescendants()) do
-		if descendant:IsA("BasePart") and descendant.Name == "Spawn" then
-			local magnitude = (descendant.Position - v8.Position).Magnitude
-
-			if n2 < magnitude then
-				n2 = magnitude
-				v9 = descendant
-			end
-		end
-	end
+	local v9 = Hub.CoinFarm.GetFurthestSpawn(indexedMap, v8.Position)
 
 	if not v9 then
 		return true
 	end
 	Hub.CoinFarm.CancelTween()
 	Hub.CoinFarm.DisableUnder()
-	local n3 = v9.Size.Y * 0.5 + arg.Size.Y * 0.5 + 0.15
+	local n3 = v9.Size.Y * 0.5 + arg.Size.Y * 0.5 + 3.5
 	arg.AssemblyLinearVelocity = Vector3.zero
 	arg.AssemblyAngularVelocity = Vector3.zero
 	arg.CFrame = v9.CFrame + Vector3.new(0, n3, 0)
@@ -2684,7 +2784,7 @@ Hub.CoinFarm.RunInitialSafety = function(arg)
 end
 
 Hub.CoinFarm.GetNearbyMurderer = function(arg)
-	if not arg or Hub.CoinFarm.GetCachedRole(localPlayer) == "Murderer" then
+	if not arg or Hub.CoinFarm.GetCachedRole(localPlayer) == "Murderer" or Hub.FlingActive or Hub.CoinFarm.endRoundRunning then
 		return nil
 	end
 	local now = os.clock()
@@ -2700,40 +2800,82 @@ Hub.CoinFarm.GetNearbyMurderer = function(arg)
 end
 
 Hub.CoinFarm.EscapeMurderer = function(arg, arg2)
-	local now = os.clock()
-	if not arg or not arg2 or now < Hub.CoinFarm.nextMurdererEscapeAt then
+	if not arg or not arg2 then
 		return false
 	end
-	local now2 = os.clock()
-	local n2 = -math.huge
-	local v8 = nil
+	local now = os.clock()
+	local murdererDist = (arg.Position - arg2.Position).Magnitude
+
+	if now < (Hub.CoinFarm.evasionGraceUntil or 0) and murdererDist > 12 then
+		return false
+	end
+
+	if now < (Hub.CoinFarm.nextMurdererEscapeAt or 0) and murdererDist > 12 then
+		return false
+	end
+
+	local maxDist = -math.huge
+	local bestCoin = nil
 
 	for k in pairs(Hub.CoinFarm.coins) do
-		local flag7 = Hub.CoinFarm.IsCoinAvailable(k)
-
-		if flag7 then
-			flag7 = (Hub.CoinFarm.retryUntil[k] or 0) <= now2
-		end
-
-		if flag7 then
-			local magnitude = (k.Position - arg2.Position).Magnitude
-
-			if n2 < magnitude then
-				n2 = magnitude
-				v8 = k
+		if Hub.CoinFarm.IsCoinAvailable(k) and (Hub.CoinFarm.retryUntil[k] or 0) <= now then
+			local dist = (k.Position - arg2.Position).Magnitude
+			if dist > maxDist then
+				maxDist = dist
+				bestCoin = k
 			end
 		end
 	end
 
-	Hub.CoinFarm.nextMurdererEscapeAt = now + 0.5
-	if not v8 then
-		return false
+	if bestCoin then
+		Hub.CoinFarm.evasionGraceUntil = now + 1.8
+		Hub.CoinFarm.nextMurdererEscapeAt = now + 1.8
+		Hub.CoinFarm.currentCoin = bestCoin
+		Hub.CoinFarm.escapeCoin = bestCoin
+		Hub.CoinFarm.escapeUnderActive = true
+		Hub.CoinFarm.SetPhase("Avoiding Murderer")
+		return true
 	end
-	Hub.CoinFarm.currentCoin = v8
-	Hub.CoinFarm.escapeCoin = v8
-	Hub.CoinFarm.escapeUnderActive = true
-	Hub.CoinFarm.SetPhase("Avoiding Murderer")
-	return true
+
+	local map = Hub.CoinFarm.indexedMap or Hub.CoinFarm.ResolveMap()
+	local furthestSpawn = Hub.CoinFarm.GetFurthestSpawn(map, arg2.Position)
+	if furthestSpawn then
+		Hub.CoinFarm.CancelTween()
+		local spawnTargetPos = furthestSpawn.Position + Vector3.new(0, furthestSpawn.Size.Y * 0.5 + arg.Size.Y * 0.5 + 3.5, 0)
+		local dist = (arg.Position - spawnTargetPos).Magnitude
+		local speed = Hub.CoinFarm.speed or 28
+		local transitDuration = math.max(0.1, math.min(dist / math.max(1, speed), 2.5))
+
+		if Hub.CoinFarm.stabilizer then
+			pcall(function() Hub.CoinFarm.stabilizer:Destroy() end)
+			Hub.CoinFarm.stabilizer = nil
+		end
+		Hub.CoinFarm.stabilizerRoot = nil
+
+		arg.AssemblyLinearVelocity = Vector3.zero
+		arg.AssemblyAngularVelocity = Vector3.zero
+
+		if arg.Parent then
+			for _, limb in ipairs(arg.Parent:GetDescendants()) do
+				if limb:IsA("BasePart") then
+					limb.CanCollide = false
+				end
+			end
+		end
+
+		local tween = TweenService:Create(arg, TweenInfo.new(transitDuration, Enum.EasingStyle.Linear), {
+			CFrame = CFrame.new(spawnTargetPos)
+		})
+		Hub.CoinFarm.activeTween = tween
+		tween:Play()
+
+		Hub.CoinFarm.evasionGraceUntil = now + transitDuration + 0.5
+		Hub.CoinFarm.nextMurdererEscapeAt = now + transitDuration + 0.5
+		Hub.CoinFarm.SetPhase("Avoiding Murderer")
+		return true
+	end
+
+	return false
 end
 
 Hub.CoinFarm.TrackCoin = function(arg)
@@ -2897,35 +3039,118 @@ Hub.CoinFarm.IndexMap = function()
 	return true
 end
 
-Hub.CoinFarm.GetNearestCoin = function(arg)
+Hub.CoinFarm.selectCoinCandidate = function(coins, playerUserId, k)
+	k = (k and k > 0) and k or Hub.CoinFarm.candidatePoolSize or 3
+	if not coins or #coins == 0 then
+		return nil
+	end
+
+	local valid = {}
+	for _, c in ipairs(coins) do
+		if type(c) == "table" then
+			if c.active ~= false and (c.Parent ~= false) then
+				table.insert(valid, c)
+			end
+		elseif typeof(c) == "Instance" then
+			if c.Parent and Hub.CoinFarm.IsCoinAvailable(c) then
+				table.insert(valid, c)
+			end
+		elseif c ~= nil then
+			table.insert(valid, c)
+		end
+	end
+
+	if #valid == 0 then
+		return nil
+	end
+	if #valid == 1 then
+		return valid[1]
+	end
+
+	local poolSize = math.min(#valid, k)
+	if Hub.CoinFarm.useRandomCoinSelection then
+		return valid[math.random(1, poolSize)]
+	end
+
+	local rawId = playerUserId or (localPlayer and localPlayer.UserId) or 1
+	local safeUserId = math.floor(math.abs(tonumber(rawId) or 1))
+	local offset = (safeUserId % poolSize) + 1
+	return valid[offset]
+end
+
+Hub.CoinFarm.GetNearestCoin = function(arg, k, playerUserId)
+	if not arg then
+		return nil
+	end
+	local argPos = (typeof(arg) == "Vector3" and arg) or (arg.Position)
+	if not argPos then
+		return nil
+	end
+
 	local now = os.clock()
-	local huge = math.huge
-	local v8 = nil
+	local candidates = {}
 
-	for k in pairs(Hub.CoinFarm.coins) do
-		if not k.Parent then
-			Hub.CoinFarm.coins[k] = nil
-			Hub.CoinFarm.retryUntil[k] = nil
-			Hub.CoinFarm.contactAttempts[k] = nil
+	for coin in pairs(Hub.CoinFarm.coins) do
+		if not coin.Parent then
+			Hub.CoinFarm.coins[coin] = nil
+			Hub.CoinFarm.retryUntil[coin] = nil
+			Hub.CoinFarm.contactAttempts[coin] = nil
 		else
-			local flag7 = Hub.CoinFarm.IsCoinAvailable(k)
-
-			if flag7 then
-				flag7 = (Hub.CoinFarm.retryUntil[k] or 0) <= now
+			local available = Hub.CoinFarm.IsCoinAvailable(coin)
+			if available then
+				available = (Hub.CoinFarm.retryUntil[coin] or 0) <= now
 			end
 
-			if flag7 then
-				local magnitude = (k.Position - arg.Position).Magnitude
-
-				if magnitude < huge then
-					huge = magnitude
-					v8 = k
-				end
+			if available then
+				local dist = (coin.Position - argPos).Magnitude
+				table.insert(candidates, { coin = coin, dist = dist })
 			end
 		end
 	end
 
-	return v8
+	if #candidates == 0 then
+		return nil
+	end
+	if #candidates == 1 then
+		return candidates[1].coin
+	end
+
+	table.sort(candidates, function(a, b)
+		if a.dist == b.dist then
+			local aPos = a.coin.Position
+			local bPos = b.coin.Position
+			if aPos.X ~= bPos.X then
+				return aPos.X < bPos.X
+			elseif aPos.Z ~= bPos.Z then
+				return aPos.Z < bPos.Z
+			else
+				return tostring(a.coin) < tostring(b.coin)
+			end
+		end
+		return a.dist < b.dist
+	end)
+
+	local poolSize = math.min(#candidates, k or Hub.CoinFarm.candidatePoolSize or 3)
+	local maxDelta = Hub.CoinFarm.candidateMaxDistanceDelta
+	if maxDelta and maxDelta > 0 and poolSize > 1 then
+		local minDist = candidates[1].dist
+		local filteredSize = 1
+		for i = 2, poolSize do
+			if (candidates[i].dist - minDist) <= maxDelta then
+				filteredSize = i
+			else
+				break
+			end
+		end
+		poolSize = filteredSize
+	end
+
+	local topCoins = table.create(poolSize)
+	for i = 1, poolSize do
+		topCoins[i] = candidates[i].coin
+	end
+
+	return Hub.CoinFarm.selectCoinCandidate(topCoins, playerUserId, poolSize)
 end
 
 Hub.CoinFarm.MarkCurrentCollected = function()
@@ -3143,23 +3368,38 @@ Hub.CoinFarm.StartEndRoundAction = function()
 
 		if character_ and character_:FindFirstChild("Knife") or backpack and backpack:FindFirstChild("Knife") then
 			str = "Murderer"
+		elseif type(Hub.CoinFarm.FindLocalGun) == "function" and Hub.CoinFarm.FindLocalGun() then
+			str = "Hero"
+		else
+			str = "Innocent"
 		end
 	end
 
+	local mode = Hub.CoinFarm.endRoundMode or "Normal (shooting)"
 	local flag7 = not Hub.CoinFarm.endRoundDeathRequested and (str == "Sheriff" or str == "Hero")
-	if not flag7 and str ~= "Murderer" and str ~= "Sheriff" and str ~= "Innocent" and str ~= "Hero" then
-		return false
-	end
 	Hub.CoinFarm.endRoundRunning = true
 	local coinFarm = Hub.CoinFarm
 	coinFarm.endRoundGeneration = coinFarm.endRoundGeneration + 1
 	local endRoundGeneration = Hub.CoinFarm.endRoundGeneration
-	Hub.CoinFarm.SetPhase(flag7 and "Ending round: Auto Shoot" or str == "Murderer" and "Ending round: Knife Aura" or "Ending round: Fling")
+
+	if mode == "Fling All" then
+		Hub.CoinFarm.SetPhase("Ending round: Fling All")
+	elseif mode == "Fling Murderer" then
+		Hub.CoinFarm.SetPhase("Ending round: Fling Murderer")
+	elseif mode == "Shoot only if Gun Dropped" then
+		Hub.CoinFarm.SetPhase("Ending round: Shoot Dropped Gun")
+	elseif str == "Murderer" and not Hub.CoinFarm.endRoundDeathRequested then
+		Hub.CoinFarm.SetPhase("Ending round: Knife Aura")
+	elseif flag7 then
+		Hub.CoinFarm.SetPhase("Ending round: Auto Shoot")
+	else
+		Hub.CoinFarm.SetPhase("Ending round: Normal")
+	end
 
 	task.spawn(function()
-		local endRoundCompleted
+		local endRoundCompleted = false
 
-		if str == "Murderer" and not Hub.CoinFarm.endRoundDeathRequested and not flag7 then
+		if str == "Murderer" and not Hub.CoinFarm.endRoundDeathRequested and mode ~= "Fling All" then
 			local runKnifeAura = Hub.CoinFarm.runKnifeAura
 			local n2 = 0
 
@@ -3181,19 +3421,85 @@ Hub.CoinFarm.StartEndRoundAction = function()
 
 				break
 			end
+		elseif mode == "Fling All" then
+			local character_ = localPlayer.Character
+			local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 then
+				Hub.CoinFarm.endRoundDeathRequested = true
+				Hub.CoinFarm.QueueEndRoundAfterRespawn()
+				return
+			end
+			if type(Hub.CoinFarm.flingAll) == "function" then
+				endRoundCompleted = Hub.CoinFarm.flingAll() == true
+			end
+		elseif mode == "Fling Murderer" then
+			local n2 = 0
+			while true do
+				local flag8 = n2 < 3 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration
+				if flag8 then
+					local character_ = localPlayer.Character
+					local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+					if not humanoid or humanoid.Health <= 0 then
+						Hub.CoinFarm.endRoundDeathRequested = true
+						Hub.CoinFarm.QueueEndRoundAfterRespawn()
+						return
+					end
+					n2 += 1
+					Hub.CoinFarm.SetPhase("Ending round: Fling Murderer")
+					if type(Hub.CoinFarm.flingMurderer) == "function" and Hub.CoinFarm.flingMurderer() == true then
+						endRoundCompleted = true
+						break
+					end
+					task.wait(0.4)
+					continue
+				end
+				break
+			end
+		elseif mode == "Shoot only if Gun Dropped" then
+			local character_ = localPlayer.Character
+			local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 then
+				Hub.CoinFarm.endRoundDeathRequested = true
+				Hub.CoinFarm.QueueEndRoundAfterRespawn()
+				return
+			end
+			local v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
+			if v8 == "Hero" then
+				Hub.CoinFarm.SetPhase("Ending round: Auto Shoot (Hero)")
+				if type(Hub.CoinFarm.shootMurderer) == "function" and Hub.CoinFarm.shootMurderer(endRoundGeneration) == true then
+					endRoundCompleted = true
+				end
+			else
+				local gunDrop = workspace:FindFirstChild("GunDrop")
+				if gunDrop and gunDrop:IsA("BasePart") then
+					Hub.CoinFarm.SetPhase("Ending round: Grabbing Dropped Gun")
+					if type(Hub.TakeDroppedGunOnce) == "function" then
+						Hub.TakeDroppedGunOnce()
+						task.wait(0.25)
+					end
+					if Hub.CoinFarm.GetCachedRole(localPlayer) == "Hero" then
+						Hub.CoinFarm.SetPhase("Ending round: Auto Shoot (Hero)")
+						if type(Hub.CoinFarm.shootMurderer) == "function" and Hub.CoinFarm.shootMurderer(endRoundGeneration) == true then
+							endRoundCompleted = true
+						end
+					end
+				else
+					Hub.CoinFarm.SetPhase("Ending round: Gun Not Dropped (Suppressed)")
+					endRoundCompleted = false
+				end
+			end
 		else
 			task.wait(0.12)
 			local n2 = 0
-
 			while true do
 				local flag8 = n2 < 3 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration
 				endRoundCompleted = false
 
 				if flag8 then
 					local character_ = localPlayer.Character
-					character_ = character_ and character_:FindFirstChildOfClass("Humanoid")
+					local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
 
-					if not character_ or character_.Health <= 0 then
+					if not character_ or not humanoid or humanoid.Health <= 0 then
 						Hub.CoinFarm.endRoundDeathRequested = true
 						Hub.CoinFarm.QueueEndRoundAfterRespawn()
 						return
@@ -3201,13 +3507,33 @@ Hub.CoinFarm.StartEndRoundAction = function()
 
 					n2 += 1
 					local v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
-					local flag9 = not Hub.CoinFarm.endRoundDeathRequested and (v8 == "Sheriff" or v8 == "Hero")
-					Hub.CoinFarm.SetPhase(flag9 and "Ending round: Auto Shoot" or "Ending round: Fling")
-					flag9 = flag9 and Hub.CoinFarm.shootMurderer or Hub.CoinFarm.flingMurderer
-					if type(flag9) == "function" and flag9() == true then
-						endRoundCompleted = true
-						break
+					local canShoot = not Hub.CoinFarm.endRoundDeathRequested and (v8 == "Sheriff" or v8 == "Hero")
+
+					if not canShoot and not Hub.CoinFarm.endRoundDeathRequested then
+						local gunDrop = workspace:FindFirstChild("GunDrop")
+						if gunDrop and gunDrop:IsA("BasePart") and type(Hub.TakeDroppedGunOnce) == "function" then
+							Hub.CoinFarm.SetPhase("Ending round: Grabbing Dropped Gun")
+							Hub.TakeDroppedGunOnce()
+							task.wait(0.25)
+							v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
+							canShoot = v8 == "Hero"
+						end
 					end
+
+					if canShoot then
+						Hub.CoinFarm.SetPhase("Ending round: Auto Shoot")
+						if type(Hub.CoinFarm.shootMurderer) == "function" and Hub.CoinFarm.shootMurderer(endRoundGeneration) == true then
+							endRoundCompleted = true
+							break
+						end
+					else
+						Hub.CoinFarm.SetPhase("Ending round: Fling Murderer")
+						if type(Hub.CoinFarm.flingMurderer) == "function" and Hub.CoinFarm.flingMurderer() == true then
+							endRoundCompleted = true
+							break
+						end
+					end
+
 					task.wait(0.4)
 					continue
 				end
@@ -3408,6 +3734,7 @@ Hub.CoinFarm.OnRoundStarted = function()
 	Hub.CoinFarm.safetyStartedAt = 0
 	Hub.CoinFarm.nextMurdererCheckAt = 0
 	Hub.CoinFarm.nextMurdererEscapeAt = 0
+	Hub.CoinFarm.evasionGraceUntil = 0
 	Hub.CoinFarm.bagCurrentValue = 0
 	Hub.CoinFarm.lastBagCount = 0
 	Hub.CoinFarm.bagMaximum = nil
@@ -3649,6 +3976,7 @@ Hub.CoinFarm.OnRoundEnded = function()
 	Hub.CoinFarm.safetyStartedAt = 0
 	Hub.CoinFarm.nextMurdererCheckAt = 0
 	Hub.CoinFarm.nextMurdererEscapeAt = 0
+	Hub.CoinFarm.evasionGraceUntil = 0
 	Hub.CoinFarm.ranThisRound = false
 	Hub.RoleState.cache = {}
 	Hub.RoleState.lastGunDropPicker = nil
@@ -3666,23 +3994,75 @@ Hub.CoinFarm.OnRoundEnded = function()
 	Hub.CoinFarm.RefreshStats()
 end
 
-Hub.CoinFarm.TouchCoin = function(arg, arg2, arg3)
-	if not Hub.CoinFarm.IsCoinAvailable(arg3) then
+Hub.CoinFarm.Teleport = function(self, targetCF)
+	if typeof(self) ~= "table" then
+		targetCF = self
+		self = Hub.CoinFarm
+	end
+	if not targetCF then
+		return
+	end
+
+	self.currentCFrame = targetCF
+	if self.teleportHistory then
+		table.insert(self.teleportHistory, targetCF)
+	end
+
+	local character = localPlayer and localPlayer.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if character and rootPart then
+		pcall(function()
+			rootPart.AssemblyLinearVelocity = Vector3.zero
+			rootPart.AssemblyAngularVelocity = Vector3.zero
+			character:PivotTo(targetCF)
+			rootPart.CFrame = targetCF
+		end)
+	end
+end
+
+Hub.CoinFarm.TouchCoin = function(arg, arg2, arg3, inFlight)
+	local coinPart = arg3
+	local character = arg
+	local rootPart = arg2
+
+	if not coinPart then
+		if typeof(arg2) == "Instance" and arg2:IsA("BasePart") then
+			coinPart = arg2
+		elseif typeof(arg) == "Instance" and arg:IsA("BasePart") then
+			coinPart = arg
+		end
+		character = localPlayer and localPlayer.Character
+		rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	end
+
+	if not coinPart then
 		return false
 	end
-	arg2.AssemblyLinearVelocity = Vector3.zero
-	arg2.CFrame = CFrame.new(Hub.CoinFarm.GetTargetPosition(arg, arg2, arg3, Hub.CoinFarm.escapeCoin == arg3 and "Under" or nil))
-	local head = arg:FindFirstChild("Head") or arg2
+
+	if Hub.CoinFarm.touchedCoins then
+		table.insert(Hub.CoinFarm.touchedCoins, coinPart)
+	end
+
+	if not Hub.CoinFarm.IsCoinAvailable(coinPart) then
+		return false
+	end
+
+	if not inFlight and Hub.CoinFarm.movementMode ~= "Continuous" and rootPart and character then
+		rootPart.AssemblyLinearVelocity = Vector3.zero
+		rootPart.CFrame = CFrame.new(Hub.CoinFarm.GetTargetPosition(character, rootPart, coinPart, Hub.CoinFarm.escapeCoin == coinPart and "Under" or nil))
+	end
+
+	local head = character and character:FindFirstChild("Head") or rootPart
 
 	if type(firetouchinterest) == "function" then
 		pcall(function()
 			if head and head.Parent then
-				firetouchinterest(head, arg3, 0)
-				firetouchinterest(head, arg3, 1)
+				firetouchinterest(head, coinPart, 0)
+				firetouchinterest(head, coinPart, 1)
 			end
-			if arg2 and arg2.Parent and arg2 ~= head then
-				firetouchinterest(arg2, arg3, 0)
-				firetouchinterest(arg2, arg3, 1)
+			if rootPart and rootPart.Parent and rootPart ~= head then
+				firetouchinterest(rootPart, coinPart, 0)
+				firetouchinterest(rootPart, coinPart, 1)
 			end
 		end)
 	end
@@ -3716,9 +4096,62 @@ Hub.CoinFarm.IsTravelValid = function(arg, arg2, arg3, arg4)
 	return foxnameMM2Runtime.alive and not isTerminated and Hub.CoinFarm.enabled and not Hub.CoinFarm.sheriffFlingRunning and not Hub.CoinFarm.sheriffFlingBlocking and not Hub.FlingActive and Hub.RoundState.active and Hub.RoundState.coinsReady and Hub.CoinFarm.currentCoin == arg2 and Hub.CoinFarm.mode == arg3 and Hub.CoinFarm.position == arg4 and arg2.Parent ~= nil and Hub.CoinFarm.IsCoinAvailable(arg2) and arg.Parent ~= nil and Hub.CoinFarm.IsLocalPlayerInRound()
 end
 
+Hub.CoinFarm.PrecalculateNextCoin = function(fromPartOrPos, excludeCoin)
+	if not fromPartOrPos then
+		return nil
+	end
+	local pos = typeof(fromPartOrPos) == "Vector3" and fromPartOrPos or (fromPartOrPos.Position or nil)
+	if not pos then
+		return nil
+	end
+	local now = os.clock()
+	local candidates = {}
+
+	for k in pairs(Hub.CoinFarm.coins) do
+		if k.Parent and k ~= excludeCoin and Hub.CoinFarm.IsCoinAvailable(k) then
+			if (Hub.CoinFarm.retryUntil[k] or 0) <= now then
+				local dist = (k.Position - pos).Magnitude
+				table.insert(candidates, { coin = k, dist = dist })
+			end
+		end
+	end
+
+	if #candidates == 0 then
+		return nil
+	end
+	if #candidates == 1 then
+		return candidates[1].coin
+	end
+
+	table.sort(candidates, function(a, b)
+		if a.dist == b.dist then
+			local aPos = a.coin.Position
+			local bPos = b.coin.Position
+			if aPos.X ~= bPos.X then
+				return aPos.X < bPos.X
+			elseif aPos.Z ~= bPos.Z then
+				return aPos.Z < bPos.Z
+			else
+				return tostring(a.coin) < tostring(b.coin)
+			end
+		end
+		return a.dist < b.dist
+	end)
+
+	local poolSize = math.min(#candidates, Hub.CoinFarm.candidatePoolSize or 3)
+	local topCoins = table.create(poolSize)
+	for i = 1, poolSize do
+		topCoins[i] = candidates[i].coin
+	end
+
+	return Hub.CoinFarm.selectCoinCandidate(topCoins, localPlayer and localPlayer.UserId, poolSize)
+end
+
 Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 	local mode = Hub.CoinFarm.mode
 	local position = Hub.CoinFarm.position
+	local movementMode = Hub.CoinFarm.movementMode or "Stop and Go"
+	local isContinuous = movementMode == "Continuous"
 	local escapeUnderActive = Hub.CoinFarm.escapeCoin == arg3
 	local str = escapeUnderActive and "Under" or position
 	Hub.CoinFarm.escapeUnderActive = escapeUnderActive
@@ -3727,6 +4160,10 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 	local magnitude = (v8 - position2).Magnitude
 	local speed = Hub.CoinFarm.speed or 28
 	local n2 = math.max(magnitude / math.max(1, speed), 0.01)
+
+	if isContinuous and not Hub.CoinFarm.nextCoin then
+		Hub.CoinFarm.nextCoin = Hub.CoinFarm.PrecalculateNextCoin(arg3, arg3)
+	end
 
 	if str == "Under" or mode == "Tween" then
 		Hub.CoinFarm.EnableUnder(arg, false, escapeUnderActive)
@@ -3741,7 +4178,7 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 		tween:Play()
 
 		while tween.PlaybackState == Enum.PlaybackState.Playing do
-			if not Hub.CoinFarm.IsTravelValid(arg2, arg3, mode, position) then
+			if not Hub.CoinFarm.IsTravelValid(arg2, arg3, mode, position) or Hub.CoinFarm.bagFull then
 				tween:Cancel()
 				break
 			else
@@ -3749,10 +4186,24 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 
 				if v9 and Hub.CoinFarm.EscapeMurderer(arg2, v9) then
 					tween:Cancel()
+					Hub.CoinFarm.nextCoin = nil
 					break
 				else
 					if str == "Under" or mode == "Tween" then
 						Hub.CoinFarm.EnableUnder(arg, false, escapeUnderActive)
+					end
+
+					if Hub.CoinFarm.movementMode == "Continuous" then
+						local dist = (v8 - arg2.Position).Magnitude
+						if dist <= 4.0 then
+							Hub.CoinFarm.TouchCoin(arg, arg2, arg3, true)
+							Hub.CoinFarm.retryUntil[arg3] = os.clock() + 2.0
+							tween:Cancel()
+							if str == "Under" then
+								Hub.CoinFarm.EnableUnder(arg, true, escapeUnderActive)
+							end
+							return true
+						end
 					end
 
 					RunService.Heartbeat:Wait()
@@ -3780,7 +4231,7 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 	local now = os.clock()
 	local v9 = now
 
-	while Hub.CoinFarm.IsTravelValid(arg2, arg3, mode, position) do
+	while Hub.CoinFarm.IsTravelValid(arg2, arg3, mode, position) and not Hub.CoinFarm.bagFull do
 		local now2 = os.clock()
 		local n3 = math.clamp((now2 - now) / n2, 0, 1)
 
@@ -3790,6 +4241,7 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 
 		local v10 = Hub.CoinFarm.GetNearbyMurderer(arg2)
 		if v10 and Hub.CoinFarm.EscapeMurderer(arg2, v10) then
+			Hub.CoinFarm.nextCoin = nil
 			return false
 		end
 		arg2.AssemblyLinearVelocity = Vector3.zero
@@ -3804,6 +4256,18 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 
 		arg2.CFrame = CFrame.new(n4)
 
+		if Hub.CoinFarm.movementMode == "Continuous" then
+			local dist = (v8 - arg2.Position).Magnitude
+			if dist <= 4.0 then
+				Hub.CoinFarm.TouchCoin(arg, arg2, arg3, true)
+				Hub.CoinFarm.retryUntil[arg3] = os.clock() + 2.0
+				if str == "Under" then
+					Hub.CoinFarm.EnableUnder(arg, true, escapeUnderActive)
+				end
+				return true
+			end
+		end
+
 		if n3 >= 1 then
 			if str == "Under" then
 				Hub.CoinFarm.EnableUnder(arg, true, escapeUnderActive)
@@ -3817,6 +4281,92 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 	end
 
 	return false
+end
+
+Hub.CoinFarm.LobbyFarmCycle = function(self)
+	local coinFarm = Hub.CoinFarm
+	local character = localPlayer and localPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+
+	if not character or not humanoid or humanoid.Health <= 0 or not rootPart then
+		coinFarm.CancelTween()
+		coinFarm.DisableUnder()
+		coinFarm.currentCoin = nil
+		coinFarm.SetPhase("Waiting for respawn")
+		return false
+	end
+
+	local lobbyCF = Hub.GetLobbyCFrame()
+
+	if not coinFarm.bagFull then
+		coinFarm.CheckBagFullGui()
+	end
+	if coinFarm.bagFull then
+		if not Hub.inLobby and lobbyCF then
+			coinFarm:Teleport(lobbyCF)
+			Hub.inLobby = true
+		end
+		coinFarm.CancelTween()
+		coinFarm.DisableUnder()
+		coinFarm.currentCoin = nil
+		local xpHandled = type(coinFarm.StartXPFarmWait) == "function" and coinFarm.StartXPFarmWait()
+		if not xpHandled then
+			if coinFarm.endRoundEnabled then
+				coinFarm.SetPhase("Coin bag full")
+				coinFarm.StartEndRoundAction()
+			else
+				coinFarm.ResetAfterBagFull()
+			end
+		end
+		return false
+	end
+
+	if not coinFarm.IndexMap() then
+		coinFarm.SetPhase("Waiting for map")
+		return false
+	end
+
+	local murdererRoot = (typeof(coinFarm.GetMurdererRoot) == "function" and coinFarm.GetMurdererRoot())
+		or (typeof(coinFarm.GetNearbyMurderer) == "function" and coinFarm.GetNearbyMurderer(rootPart))
+	if murdererRoot and (murdererRoot.Position - rootPart.Position).Magnitude < (coinFarm.murdererNearRange or 30) then
+		if typeof(coinFarm.EscapeMurderer) == "function" then
+			coinFarm.EscapeMurderer(character, murdererRoot)
+		end
+		return false
+	end
+
+	local targetCoin = coinFarm.currentCoin
+	if not targetCoin or not targetCoin.Parent or not coinFarm.coins[targetCoin] or not coinFarm.IsCoinAvailable(targetCoin) then
+		targetCoin = coinFarm.GetNearestCoin(rootPart)
+		coinFarm.currentCoin = targetCoin
+	end
+
+	if not targetCoin or not targetCoin.Parent then
+		coinFarm.SetPhase("Waiting for coin")
+		return false
+	end
+
+	coinFarm.ranThisRound = true
+	coinFarm.SetPhase("ToCoin")
+
+	local coinCF = targetCoin.CFrame
+	coinFarm:Teleport(coinCF)
+	Hub.inLobby = false
+
+	coinFarm:TouchCoin(targetCoin)
+
+	coinFarm.SetPhase("ToLobby")
+	if lobbyCF then
+		coinFarm:Teleport(lobbyCF)
+		Hub.inLobby = true
+	end
+
+	coinFarm.totalCollected = (coinFarm.totalCollected or 0) + 1
+	coinFarm.currentCoin = nil
+	coinFarm.RefreshStats()
+
+	return true
 end
 
 Hub.CoinFarm.Worker = function()
@@ -3845,7 +4395,10 @@ Hub.CoinFarm.Worker = function()
 			else
 				local v11, flag17, startedAt, flag18, sheriffFlingRunning
 
-				if not Hub.RoundState.coinsReady then
+				if Hub.CoinFarm.lobbyFarmEnabled then
+					Hub.CoinFarm:LobbyFarmCycle()
+					task.wait(0.1)
+				elseif not Hub.RoundState.coinsReady then
 					Hub.CoinFarm.IndexMap()
 
 					for k in pairs(Hub.CoinFarm.coins) do
@@ -3982,7 +4535,8 @@ Hub.CoinFarm.Worker = function()
 														n2 = v10 or 0
 														n3 = n2 + 1
 														Hub.CoinFarm.contactAttempts[currentCoin] = n3
-														Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+														local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+														Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 														if flag7 then
 															Hub.CoinFarm.escapeCoin = nil
@@ -3993,8 +4547,23 @@ Hub.CoinFarm.Worker = function()
 															end
 														end
 
-														task.wait(0.3)
-														flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+														if isContinuous then
+															Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+															Hub.CoinFarm.contactAttempts[currentCoin] = nil
+															if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+																currentCoin = Hub.CoinFarm.nextCoin
+																Hub.CoinFarm.currentCoin = currentCoin
+																Hub.CoinFarm.nextCoin = nil
+															else
+																currentCoin = nil
+																Hub.CoinFarm.currentCoin = nil
+																Hub.CoinFarm.nextCoin = nil
+															end
+															flag16 = false
+														else
+															task.wait(0.3)
+															flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+														end
 
 														if flag16 then
 															if not (n3 >= 2) then
@@ -4050,7 +4619,8 @@ Hub.CoinFarm.Worker = function()
 															n2 = v10 or 0
 															n3 = n2 + 1
 															Hub.CoinFarm.contactAttempts[currentCoin] = n3
-															Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+															local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+															Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 															if flag7 then
 																Hub.CoinFarm.escapeCoin = nil
@@ -4061,8 +4631,23 @@ Hub.CoinFarm.Worker = function()
 																end
 															end
 
-															task.wait(0.3)
-															flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+															if isContinuous then
+																Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+																Hub.CoinFarm.contactAttempts[currentCoin] = nil
+																if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+																	currentCoin = Hub.CoinFarm.nextCoin
+																	Hub.CoinFarm.currentCoin = currentCoin
+																	Hub.CoinFarm.nextCoin = nil
+																else
+																	currentCoin = nil
+																	Hub.CoinFarm.currentCoin = nil
+																	Hub.CoinFarm.nextCoin = nil
+																end
+																flag16 = false
+															else
+																task.wait(0.3)
+																flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+															end
 
 															if flag16 then
 																if not (n3 >= 2) then
@@ -4170,7 +4755,8 @@ Hub.CoinFarm.Worker = function()
 														n2 = v10 or 0
 														n3 = n2 + 1
 														Hub.CoinFarm.contactAttempts[currentCoin] = n3
-														Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+														local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+														Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 														if flag7 then
 															Hub.CoinFarm.escapeCoin = nil
@@ -4181,8 +4767,23 @@ Hub.CoinFarm.Worker = function()
 															end
 														end
 
-														task.wait(0.3)
-														flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+														if isContinuous then
+															Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+															Hub.CoinFarm.contactAttempts[currentCoin] = nil
+															if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+																currentCoin = Hub.CoinFarm.nextCoin
+																Hub.CoinFarm.currentCoin = currentCoin
+																Hub.CoinFarm.nextCoin = nil
+															else
+																currentCoin = nil
+																Hub.CoinFarm.currentCoin = nil
+																Hub.CoinFarm.nextCoin = nil
+															end
+															flag16 = false
+														else
+															task.wait(0.3)
+															flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+														end
 
 														if flag16 then
 															if not (n3 >= 2) then
@@ -4317,7 +4918,8 @@ Hub.CoinFarm.Worker = function()
 														n2 = v10 or 0
 														n3 = n2 + 1
 														Hub.CoinFarm.contactAttempts[currentCoin] = n3
-														Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+														local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+														Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 														if flag7 then
 															Hub.CoinFarm.escapeCoin = nil
@@ -4328,8 +4930,23 @@ Hub.CoinFarm.Worker = function()
 															end
 														end
 
-														task.wait(0.3)
-														flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+														if isContinuous then
+															Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+															Hub.CoinFarm.contactAttempts[currentCoin] = nil
+															if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+																currentCoin = Hub.CoinFarm.nextCoin
+																Hub.CoinFarm.currentCoin = currentCoin
+																Hub.CoinFarm.nextCoin = nil
+															else
+																currentCoin = nil
+																Hub.CoinFarm.currentCoin = nil
+																Hub.CoinFarm.nextCoin = nil
+															end
+															flag16 = false
+														else
+															task.wait(0.3)
+															flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+														end
 
 														if flag16 then
 															if not (n3 >= 2) then
@@ -4506,7 +5123,8 @@ Hub.CoinFarm.Worker = function()
 								n2 = v10 or 0
 								n3 = n2 + 1
 								Hub.CoinFarm.contactAttempts[currentCoin] = n3
-								Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+								local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+								Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 								if flag7 then
 									Hub.CoinFarm.escapeCoin = nil
@@ -4517,8 +5135,23 @@ Hub.CoinFarm.Worker = function()
 									end
 								end
 
-								task.wait(0.3)
-								flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+								if isContinuous then
+									Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+									Hub.CoinFarm.contactAttempts[currentCoin] = nil
+									if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+										currentCoin = Hub.CoinFarm.nextCoin
+										Hub.CoinFarm.currentCoin = currentCoin
+										Hub.CoinFarm.nextCoin = nil
+									else
+										currentCoin = nil
+										Hub.CoinFarm.currentCoin = nil
+										Hub.CoinFarm.nextCoin = nil
+									end
+									flag16 = false
+								else
+									task.wait(0.3)
+									flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+								end
 
 								if flag16 then
 									if n3 >= 2 then
@@ -4558,7 +5191,8 @@ Hub.CoinFarm.Worker = function()
 									n2 = v10 or 0
 									n3 = n2 + 1
 									Hub.CoinFarm.contactAttempts[currentCoin] = n3
-									Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+									local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+									Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 									if flag7 then
 										Hub.CoinFarm.escapeCoin = nil
@@ -4569,8 +5203,23 @@ Hub.CoinFarm.Worker = function()
 										end
 									end
 
-									task.wait(0.3)
-									flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+									if isContinuous then
+										Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+										Hub.CoinFarm.contactAttempts[currentCoin] = nil
+										if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+											currentCoin = Hub.CoinFarm.nextCoin
+											Hub.CoinFarm.currentCoin = currentCoin
+											Hub.CoinFarm.nextCoin = nil
+										else
+											currentCoin = nil
+											Hub.CoinFarm.currentCoin = nil
+											Hub.CoinFarm.nextCoin = nil
+										end
+										flag16 = false
+									else
+										task.wait(0.3)
+										flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+									end
 
 									if flag16 then
 										if n3 >= 2 then
@@ -4667,7 +5316,8 @@ Hub.CoinFarm.Worker = function()
 			n2 = v10 or 0
 			n3 = n2 + 1
 			Hub.CoinFarm.contactAttempts[currentCoin] = n3
-			Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+			local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+			Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 			if flag7 then
 				Hub.CoinFarm.escapeCoin = nil
@@ -4678,8 +5328,23 @@ Hub.CoinFarm.Worker = function()
 				end
 			end
 
-			task.wait(0.3)
-			flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+			if isContinuous then
+				Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+				Hub.CoinFarm.contactAttempts[currentCoin] = nil
+				if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+					currentCoin = Hub.CoinFarm.nextCoin
+					Hub.CoinFarm.currentCoin = currentCoin
+					Hub.CoinFarm.nextCoin = nil
+				else
+					currentCoin = nil
+					Hub.CoinFarm.currentCoin = nil
+					Hub.CoinFarm.nextCoin = nil
+				end
+				flag16 = false
+			else
+				task.wait(0.3)
+				flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+			end
 			if not flag16 then
 				continue
 			end
@@ -4803,7 +5468,8 @@ Hub.CoinFarm.Worker = function()
 			n2 = v10 or 0
 			n3 = n2 + 1
 			Hub.CoinFarm.contactAttempts[currentCoin] = n3
-			Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin)
+			local isContinuous = Hub.CoinFarm.movementMode == "Continuous"
+			Hub.CoinFarm.TouchCoin(character_, humanoidRootPart, currentCoin, isContinuous)
 
 			if flag7 then
 				Hub.CoinFarm.escapeCoin = nil
@@ -4814,8 +5480,23 @@ Hub.CoinFarm.Worker = function()
 				end
 			end
 
-			task.wait(0.3)
-			flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+			if isContinuous then
+				Hub.CoinFarm.retryUntil[currentCoin] = os.clock() + 2.0
+				Hub.CoinFarm.contactAttempts[currentCoin] = nil
+				if Hub.CoinFarm.nextCoin and Hub.CoinFarm.nextCoin.Parent and Hub.CoinFarm.IsCoinAvailable(Hub.CoinFarm.nextCoin) then
+					currentCoin = Hub.CoinFarm.nextCoin
+					Hub.CoinFarm.currentCoin = currentCoin
+					Hub.CoinFarm.nextCoin = nil
+				else
+					currentCoin = nil
+					Hub.CoinFarm.currentCoin = nil
+					Hub.CoinFarm.nextCoin = nil
+				end
+				flag16 = false
+			else
+				task.wait(0.3)
+				flag16 = Hub.CoinFarm.currentCoin == currentCoin and Hub.CoinFarm.coins[currentCoin]
+			end
 			if not flag16 then
 				continue
 			end
@@ -5503,7 +6184,7 @@ Hub.CoinFarm.SetEnabled = function(arg)
 
 	if Hub.CoinFarm.enabled and not enabled then
 		Hub.CoinFarm.sessionStartedAt = os.clock() - math.max(0, tonumber(Hub.CoinFarm.resumedSessionElapsed) or 0)
-		Hub.CoinFarm.serverHopTimerStartedAt = os.clock()
+		Hub.CoinFarm.serverHopTimerStartedAt = Hub.CoinFarm.serverHopTimerEnabled and os.clock() or 0
 		Hub.CoinFarm.resumedSessionElapsed = 0
 		Hub.CoinFarm.resetRequestedForBag = false
 		Hub.CoinFarm.bagCurrentValue = nil
@@ -5704,10 +6385,21 @@ Hub.CoinFarm.ApplyResume = function()
 	Hub.CoinFarm.serverHopCount = math.max(0, math.floor(tonumber(v8.serverHopCount) or 0))
 	Hub.CoinFarm.mode = v8.mode == "Tween" and "Tween" or "CFrame"
 	Hub.CoinFarm.position = v8.position == "Under" and "Under" or "Normal"
+	if type(v8.movementMode) == "string" then
+		Hub.CoinFarm.movementMode = v8.movementMode == "Continuous" and "Continuous" or "Stop and Go"
+	end
+	if v8.speed ~= nil then
+		Hub.CoinFarm.speed = math.clamp(math.floor(tonumber(v8.speed) or 28), 10, 60)
+	end
+	Hub.CoinFarm.lobbyFarmEnabled = v8.lobbyFarm == true
 	Hub.CoinFarm.endRoundEnabled = v8.endRound == true
+	if type(v8.endRoundMode) == "string" then
+		Hub.CoinFarm.endRoundMode = v8.endRoundMode
+	end
 	Hub.CoinFarm.xpFarmEnabled = v8.xpFarm == true and Hub.CoinFarm.endRoundEnabled
 	Hub.CoinFarm.serverHopLowPlayers = v8.serverHopLowPlayers == true
 	Hub.CoinFarm.serverHopPlayerThreshold = math.clamp(math.floor(tonumber(v8.serverHopThreshold) or 4), 1, 6)
+	Hub.CoinFarm.serverHopTimerEnabled = v8.serverHopTimerEnabled == true
 	Hub.CoinFarm.serverHopTimerMinutes = math.clamp(math.floor(tonumber(v8.serverHopTimerMinutes) or 15), 10, 30)
 	Hub.CoinFarm.antiBotEnabled = v8.antiBot == true
 	Hub.CoinFarm.blackScreenEnabled = v8.blackScreen == true
@@ -5738,7 +6430,13 @@ Hub.CoinFarm.ApplyResume = function()
 	fn12(Hub.AutoClaimReward.control, Hub.AutoClaimReward.enabled)
 	fn13(Hub.CoinFarm.modeControl, Hub.CoinFarm.mode)
 	fn13(Hub.CoinFarm.positionControl, Hub.CoinFarm.position)
+	fn13(Hub.CoinFarm.movementModeControl, Hub.CoinFarm.movementMode)
+	if v8.speed ~= nil then
+		fn12(Hub.CoinFarm.speedControl, Hub.CoinFarm.speed)
+	end
+	fn12(Hub.CoinFarm.lobbyFarmControl, Hub.CoinFarm.lobbyFarmEnabled)
 	fn12(Hub.CoinFarm.endRoundControl, Hub.CoinFarm.endRoundEnabled)
+	fn13(Hub.CoinFarm.endRoundModeControl, Hub.CoinFarm.endRoundMode)
 
 	if type(Hub.CoinFarm.UpdateXPFarmLock) == "function" then
 		Hub.CoinFarm.UpdateXPFarmLock()
@@ -5747,6 +6445,7 @@ Hub.CoinFarm.ApplyResume = function()
 	fn12(Hub.CoinFarm.xpFarmControl, Hub.CoinFarm.xpFarmEnabled)
 	fn12(Hub.CoinFarm.serverHopControl, Hub.CoinFarm.serverHopLowPlayers)
 	fn12(Hub.CoinFarm.serverHopThresholdControl, Hub.CoinFarm.serverHopPlayerThreshold)
+	fn12(Hub.CoinFarm.serverHopTimerToggle, Hub.CoinFarm.serverHopTimerEnabled)
 	fn12(Hub.CoinFarm.serverHopTimerControl, Hub.CoinFarm.serverHopTimerMinutes)
 	fn12(Hub.CoinFarm.antiBotControl, Hub.CoinFarm.antiBotEnabled)
 	fn12(Hub.CoinFarm.blackScreenControl, Hub.CoinFarm.blackScreenEnabled)
@@ -6007,13 +6706,6 @@ do
 			return http_request
 		end
 
-		if type(syn) == "table" and type(syn.request) == "function" then
-			return syn.request
-		end
-
-		if type(fluxus) == "table" and type(fluxus.request) == "function" then
-			return fluxus.request
-		end
 		return nil
 	end
 
@@ -6223,14 +6915,6 @@ createScreenGui = function()
 	screenGui.IgnoreGuiInset = true
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.DisplayOrder = 999999
-
-	pcall(function()
-		if syn and syn.protect_gui then
-			syn.protect_gui(screenGui)
-		elseif protect_gui then
-			protect_gui(screenGui)
-		end
-	end)
 
 	screenGui.Parent = getSafeGuiParent()
 	v8 = screenGui
@@ -7978,6 +8662,35 @@ do
 		return fn20(v9.Name) == true
 	end
 
+	Hub.CoinFarm.flingAll = function()
+		if Hub.FlingActive or Hub.FlingAllRunning then
+			return false
+		end
+		Hub.FlingAllRunning = true
+		local anyFlung = false
+		local murderer = fn30()
+		if murderer and murderer ~= localPlayer and murderer.Parent and fn26(murderer) then
+			if fn20(murderer.Name, nil, 1, true) == true then
+				anyFlung = true
+			end
+			task.wait(0.1)
+		end
+		local players = Players:GetPlayers()
+		for _, player in ipairs(players) do
+			if not foxnameMM2Runtime.alive or isTerminated then
+				break
+			end
+			if player ~= localPlayer and player ~= murderer and player.Parent and fn26(player) then
+				if fn20(player.Name, nil, 1, true) == true then
+					anyFlung = true
+				end
+				task.wait(0.1)
+			end
+		end
+		Hub.FlingAllRunning = false
+		return anyFlung
+	end
+
 	Hub.CoinFarm.getSheriffFlingTarget = function()
 		for _, player in ipairs(Players:GetPlayers()) do
 			local v9 = Hub.RoleState.cache[player.Name] or Hub.RoleState.cache[tostring(player.UserId)] or Hub.RoleState.cache[player.UserId]
@@ -8892,11 +9605,16 @@ do
 			totalXP = math.max(0, math.floor(tonumber(Hub.CoinFarm.totalEarnedXP) or 0)),
 			sessionElapsed = flag7,
 			serverHopCount = math.max(0, math.floor(tonumber(Hub.CoinFarm.serverHopCount) or 0)),
+			serverHopTimerEnabled = Hub.CoinFarm.serverHopTimerEnabled == true,
 			serverHopTimerMinutes = math.clamp(math.floor(tonumber(Hub.CoinFarm.serverHopTimerMinutes) or 15), 10, 30),
 			mode = Hub.CoinFarm.mode,
 			position = Hub.CoinFarm.position,
+			movementMode = Hub.CoinFarm.movementMode or "Stop and Go",
+			speed = math.clamp(math.floor(tonumber(Hub.CoinFarm.speed) or 28), 10, 60),
+			lobbyFarm = Hub.CoinFarm.lobbyFarmEnabled == true,
 			xpFarm = Hub.CoinFarm.xpFarmEnabled == true,
 			endRound = Hub.CoinFarm.endRoundEnabled == true,
+			endRoundMode = Hub.CoinFarm.endRoundMode or "Normal (shooting)",
 			serverHopLowPlayers = Hub.CoinFarm.serverHopLowPlayers == true,
 			serverHopThreshold = math.clamp(math.floor(tonumber(Hub.CoinFarm.serverHopPlayerThreshold) or 4), 1, 6),
 			antiBot = Hub.CoinFarm.antiBotEnabled == true,
@@ -8921,22 +9639,7 @@ do
 			end)
 		end
 
-		local flag8 = type(queue_on_teleport) == "function" and queue_on_teleport or type(queueonteleport) == "function" and queueonteleport
-		local queueOnTeleport
-
-		if flag8 then
-			queueOnTeleport = flag8
-		else
-			local flag9 = type(syn) == "table"
-
-			if flag9 then
-				queueOnTeleport = syn.queue_on_teleport or syn.queueonteleport
-			else
-				queueOnTeleport = flag9
-			end
-		end
-
-		queueOnTeleport = queueOnTeleport or type(fluxus) == "table" and (fluxus.queue_on_teleport or fluxus.queueonteleport)
+		local queueOnTeleport = type(queueonteleport) == "function" and queueonteleport or type(queue_on_teleport) == "function" and queue_on_teleport or nil
 		if type(queueOnTeleport) ~= "function" then
 			return false, "queue_on_teleport unavailable"
 		end
@@ -8967,7 +9670,7 @@ do
 				genv2 = _G
 			end
 
-			local request_ = genv2.request or genv2.http_request or type(genv2.syn) == "table" and genv2.syn.request
+			local request_ = genv2.request or genv2.http_request
 			local body = nil
 
 			if type(request_) == "function" then
@@ -9315,7 +10018,7 @@ do
 	end
 
 	Hub.CoinFarm.StartTimerServerHop = function(arg, arg2)
-		if Hub.CoinFarm.serverHopRunning or not Hub.CoinFarm.enabled then
+		if Hub.CoinFarm.serverHopRunning or not Hub.CoinFarm.enabled or not Hub.CoinFarm.serverHopTimerEnabled then
 			return false
 		end
 		Hub.CoinFarm.serverHopRunning = true
@@ -9380,7 +10083,7 @@ do
 
 	task.spawn(function()
 		while foxnameMM2Runtime.alive and not isTerminated do
-			if Hub.CoinFarm.enabled and not Hub.CoinFarm.serverHopRunning then
+			if Hub.CoinFarm.enabled and Hub.CoinFarm.serverHopTimerEnabled and not Hub.CoinFarm.serverHopRunning then
 				if Hub.CoinFarm.serverHopTimerStartedAt <= 0 then
 					Hub.CoinFarm.serverHopTimerStartedAt = os.clock()
 				end
@@ -10214,7 +10917,7 @@ do
 		if type(arg) ~= "string" or not arg:match("^[%w_%-]+%.png$") or Hub.TouchButtons.remoteIconCache[arg] or Hub.TouchButtons.remoteIconLoading[arg] or Hub.TouchButtons.remoteIconFailed[arg] then
 			return
 		end
-		local flag7 = type(getcustomasset) == "function" and getcustomasset or type(getsynasset) == "function" and getsynasset
+		local flag7 = type(getcustomasset) == "function" and getcustomasset or nil
 		if type(flag7) ~= "function" or type(writefile) ~= "function" or type(isfile) ~= "function" or type(makefolder) ~= "function" or type(isfolder) ~= "function" then
 			Hub.TouchButtons.remoteIconFailed[arg] = true
 			return
@@ -10715,14 +11418,6 @@ Hub.TouchButtons.Create = function(arg, name, name2, text, arg2, arg3, arg4)
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.DisplayOrder = 999996
 
-	pcall(function()
-		if syn and syn.protect_gui then
-			syn.protect_gui(screenGui)
-		elseif protect_gui then
-			protect_gui(screenGui)
-		end
-	end)
-
 	screenGui.Parent = getSafeGuiParent()
 	local textButton = Instance.new("TextButton")
 	textButton.Name = name2
@@ -11080,14 +11775,6 @@ Hub.TouchButtons.ToggleQuickMenu = function(arg)
 	screenGui.IgnoreGuiInset = true
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.DisplayOrder = 999998
-
-	pcall(function()
-		if syn and syn.protect_gui then
-			syn.protect_gui(screenGui)
-		elseif protect_gui then
-			protect_gui(screenGui)
-		end
-	end)
 
 	screenGui.Parent = getSafeGuiParent()
 
@@ -14641,6 +15328,25 @@ Hub.CoinFarm.toggleControl = Tabs.Farm:Toggle({
 	end,
 })
 
+Hub.CoinFarm.lobbyFarmControl = Tabs.Farm:Toggle({
+	Title = "Lobby Coin Farm",
+	Desc = "Teleports from lobby to coins and returns immediately in a continuous loop.",
+	Flag = "Farm_LobbyCoinFarm",
+	Default = Hub.CoinFarm.lobbyFarmEnabled or false,
+	Callback = function(val)
+		Hub.CoinFarm.lobbyFarmEnabled = val and true or false
+		if not val then
+			Hub.CoinFarm.CancelTween()
+		elseif not Hub.CoinFarm.enabled then
+			if Hub.CoinFarm.toggleControl and type(Hub.CoinFarm.toggleControl.SetValue) == "function" then
+				Hub.CoinFarm.toggleControl:SetValue(true)
+			else
+				Hub.CoinFarm.SetEnabled(true)
+			end
+		end
+	end,
+})
+
 Hub.CoinFarm.webhookInput = Tabs.Farm:Input({
 	Title = "Coin Farm Webhook",
 	Desc = "Press Enter to save. Leave empty and press Enter to clear.",
@@ -14793,6 +15499,16 @@ Hub.CoinFarm.endRoundControl = Tabs.Farm:Toggle({
 	end,
 })
 
+Hub.CoinFarm.endRoundModeControl = Tabs.Farm:Dropdown({
+	Title = "End Round Mode",
+	Values = { "Normal (shooting)", "Shoot only if Gun Dropped", "Fling Murderer", "Fling All" },
+	Value = "Normal (shooting)",
+	Callback = function(v)
+		Hub.CoinFarm.endRoundMode = v
+	end,
+	Flag = "Farm_EndRoundMode",
+})
+
 Hub.CoinFarm.serverHopControl = Tabs.Farm:Toggle({
 	Title = "Server Hop If Low Players",
 	Flag = "Farm_ServerHopLowPlayers",
@@ -14812,14 +15528,24 @@ Hub.CoinFarm.serverHopThresholdControl = Tabs.Farm:Slider({
 	end,
 })
 
+Hub.CoinFarm.serverHopTimerToggle = Tabs.Farm:Toggle({
+	Title = "Server Hop by Timer",
+	Flag = "Farm_ServerHopTimerEnabled",
+	Default = false,
+	Callback = function(arg)
+		Hub.CoinFarm.serverHopTimerEnabled = arg and true or false
+		Hub.CoinFarm.serverHopTimerStartedAt = Hub.CoinFarm.serverHopTimerEnabled and Hub.CoinFarm.enabled and os.clock() or 0
+	end,
+})
+
 Hub.CoinFarm.serverHopTimerControl = Tabs.Farm:Slider({
-	Title = "Server Hop Timer",
+	Title = "Server Hop Timer (Minutes)",
 	Flag = "Farm_ServerHopTimerMinutes",
 	Value = { Min = 10, Max = 30, Default = Hub.CoinFarm.serverHopTimerMinutes },
 	Step = 1,
 	Callback = function(arg)
 		Hub.CoinFarm.serverHopTimerMinutes = math.clamp(math.floor(tonumber(arg) or 15), 10, 30)
-		Hub.CoinFarm.serverHopTimerStartedAt = Hub.CoinFarm.enabled and os.clock() or 0
+		Hub.CoinFarm.serverHopTimerStartedAt = Hub.CoinFarm.serverHopTimerEnabled and Hub.CoinFarm.enabled and os.clock() or 0
 	end,
 })
 
@@ -14909,6 +15635,22 @@ Hub.CoinFarm.positionControl = Tabs.Farm:Dropdown({
 
 		if position ~= "Under" then
 			Hub.CoinFarm.DisableUnder()
+		end
+	end,
+})
+
+Hub.CoinFarm.movementModeControl = Tabs.Farm:Dropdown({
+	Title = "Movement Mode",
+	Flag = "Farm_MovementMode",
+	Values = { "Stop and Go", "Continuous" },
+	Value = Hub.CoinFarm.movementMode or "Stop and Go",
+	Callback = function(mode)
+		if mode ~= "Stop and Go" and mode ~= "Continuous" then
+			return
+		end
+		Hub.CoinFarm.movementMode = mode
+		if mode == "Continuous" and Hub.CoinFarm.currentCoin then
+			Hub.CoinFarm.nextCoin = Hub.CoinFarm.PrecalculateNextCoin(Hub.CoinFarm.currentCoin, Hub.CoinFarm.currentCoin)
 		end
 	end,
 })
@@ -16292,64 +17034,10 @@ do
 	end
 
 	local function fn41()
-		local tbl7 = {}
-		local summerLobby = workspace:FindFirstChild("SummerLobby")
-		local lobby = workspace:FindFirstChild("Lobby")
-		local normalLobby = workspace:FindFirstChild("NormalLobby")
-		local halloweenLobby = workspace:FindFirstChild("HalloweenLobby")
-		local christmasLobby = workspace:FindFirstChild("ChristmasLobby")
-		local v9 = workspace
-		local findFirstChild = v9.FindFirstChild
-		tbl7[1] = summerLobby
-		tbl7[2] = lobby
-		tbl7[3] = normalLobby
-		tbl7[4] = halloweenLobby
-		tbl7[5] = christmasLobby
-
-		do
-			local values = table.pack(findFirstChild(v9, "EasterLobby"))
-			table.move(values, 1, values.n, 6, tbl7)
+		local cf, label = Hub.GetLobbyCFrame()
+		if cf then
+			return cf, label or "Lobby"
 		end
-
-		for _, v10 in ipairs(tbl7) do
-			if v10 then
-				local spawns = v10:FindFirstChild("Spawns")
-
-				if spawns then
-					local spawnLocation = spawns:FindFirstChildOfClass("SpawnLocation") or spawns:FindFirstChildWhichIsA("BasePart")
-					if spawnLocation then
-						return spawnLocation.CFrame + Vector3.new(0, 3.5, 0), "Lobby Spawns"
-					end
-				end
-
-				local nikilis = v10:FindFirstChild("Lobby") and v10.Lobby:FindFirstChild("Nikilis")
-
-				if nikilis and (nikilis:IsA("BasePart") or nikilis:IsA("Model")) then
-					local pivot
-
-					if nikilis:IsA("Model") then
-						pivot = nikilis:GetPivot()
-					else
-						pivot = nikilis.CFrame
-					end
-
-					return pivot + Vector3.new(0, 3.5, 0), "Nikilis Lobby"
-				end
-
-				v10 = v10:FindFirstChild("Lobby") or v10
-				local basePart = v10:FindFirstChildWhichIsA("BasePart", true)
-				if basePart then
-					return basePart.CFrame + Vector3.new(0, 5, 0), "Lobby"
-				end
-			end
-		end
-
-		for _, descendant in ipairs(workspace:GetDescendants()) do
-			if descendant:IsA("SpawnLocation") and (descendant.Parent and string.find(string.lower(descendant.Parent.Name), "spawn") or descendant.Position.Y < -50) then
-				return descendant.CFrame + Vector3.new(0, 3.5, 0), "Lobby Spawn"
-			end
-		end
-
 		return nil, nil
 	end
 
@@ -17583,30 +18271,29 @@ do
 				if not v13 then
 					return
 				end
-				local n2 = -math.huge
-				local v14 = nil
-
-				for _, descendant in ipairs(v13:GetDescendants()) do
-					if descendant:IsA("BasePart") and descendant.Name == "Spawn" then
-						local magnitude = (descendant.Position - v12.Position).Magnitude
-
-						if n2 < magnitude then
-							n2 = magnitude
-							v14 = descendant
-						end
-					end
-				end
-
+				local v14 = Hub.CoinFarm.GetFurthestSpawn(v13, v12.Position)
 				if not v14 then
 					return
 				end
-				avoidMurderer.nextTeleportAt = os.clock() + 1
+				avoidMurderer.nextTeleportAt = os.clock() + 1.2
 				Hub.CoinFarm.CancelTween()
 				Hub.CoinFarm.currentCoin = nil
-				Hub.CoinFarm.DisableUnder()
+				if Hub.CoinFarm.stabilizer then
+					pcall(function() Hub.CoinFarm.stabilizer:Destroy() end)
+					Hub.CoinFarm.stabilizer = nil
+				end
+				Hub.CoinFarm.stabilizerRoot = nil
 				character_.AssemblyLinearVelocity = Vector3.zero
 				character_.AssemblyAngularVelocity = Vector3.zero
-				character_.CFrame = v14.CFrame + Vector3.new(0, v14.Size.Y * 0.5 + character_.Size.Y * 0.5 + 0.15, 0)
+				local safeHeight = v14.Size.Y * 0.5 + character_.Size.Y * 0.5 + 3.5
+				character_.CFrame = v14.CFrame + Vector3.new(0, safeHeight, 0)
+				if character_.Parent then
+					for _, limb in ipairs(character_.Parent:GetDescendants()) do
+						if limb:IsA("BasePart") then
+							limb.CanCollide = false
+						end
+					end
+				end
 			end)
 		end,
 	})
@@ -18311,8 +18998,12 @@ local function fn39()
 			endRound = Hub.CoinFarm.endRoundEnabled == true,
 			mode = Hub.CoinFarm.mode,
 			position = Hub.CoinFarm.position,
+			movementMode = Hub.CoinFarm.movementMode or "Stop and Go",
+			speed = math.clamp(math.floor(tonumber(Hub.CoinFarm.speed) or 28), 10, 60),
+			lobbyFarm = Hub.CoinFarm.lobbyFarmEnabled == true,
 			serverHopLowPlayers = Hub.CoinFarm.serverHopLowPlayers == true,
 			serverHopThreshold = Hub.CoinFarm.serverHopPlayerThreshold,
+			serverHopTimerEnabled = Hub.CoinFarm.serverHopTimerEnabled == true,
 			serverHopTimerMinutes = Hub.CoinFarm.serverHopTimerMinutes,
 			antiBot = Hub.CoinFarm.antiBotEnabled == true,
 			autoPrestige = Hub.AutoPrestige.enabled == true,
@@ -18338,14 +19029,20 @@ local function fn39()
 		local xpFarmEnabled = flag8.xpFarm == true and endRoundEnabled
 		local mode = flag8.mode == "Tween" and "Tween" or "CFrame"
 		local position = flag8.position == "Under" and "Under" or "Normal"
+		local movementMode = flag8.movementMode == "Continuous" and "Continuous" or "Stop and Go"
+		Hub.CoinFarm.lobbyFarmEnabled = flag8.lobbyFarm == true
 		Hub.CoinFarm.endRoundEnabled = endRoundEnabled
 		Hub.CoinFarm.xpFarmEnabled = xpFarmEnabled
 		Hub.CoinFarm.mode = mode
 		Hub.CoinFarm.position = position
+		Hub.CoinFarm.movementMode = movementMode
 		Hub.CoinFarm.serverHopLowPlayers = flag8.serverHopLowPlayers == true
 		Hub.CoinFarm.serverHopPlayerThreshold = math.clamp(math.floor(tonumber(flag8.serverHopThreshold) or 4), 1, 6)
+		Hub.CoinFarm.serverHopTimerEnabled = flag8.serverHopTimerEnabled == true
 		Hub.CoinFarm.serverHopTimerMinutes = math.clamp(math.floor(tonumber(flag8.serverHopTimerMinutes) or 15), 10, 30)
 		Hub.CoinFarm.antiBotEnabled = flag8.antiBot == true
+		local speed = math.clamp(math.floor(tonumber(flag8.speed) or 28), 10, 60)
+		Hub.CoinFarm.speed = speed
 		Hub.CoinFarm.currentCoin = nil
 		Hub.CoinFarm.CancelTween()
 
@@ -18380,9 +19077,13 @@ local function fn39()
 		fn48(Hub.CoinFarm.xpFarmControl, xpFarmEnabled)
 		fn49(Hub.CoinFarm.modeControl, mode)
 		fn49(Hub.CoinFarm.positionControl, position)
+		fn49(Hub.CoinFarm.movementModeControl, movementMode)
 		fn48(Hub.CoinFarm.serverHopControl, Hub.CoinFarm.serverHopLowPlayers)
 		fn48(Hub.CoinFarm.serverHopThresholdControl, Hub.CoinFarm.serverHopPlayerThreshold)
+		fn48(Hub.CoinFarm.serverHopTimerToggle, Hub.CoinFarm.serverHopTimerEnabled)
 		fn48(Hub.CoinFarm.serverHopTimerControl, Hub.CoinFarm.serverHopTimerMinutes)
+		fn48(Hub.CoinFarm.speedControl, speed)
+		fn48(Hub.CoinFarm.lobbyFarmControl, Hub.CoinFarm.lobbyFarmEnabled)
 		fn48(Hub.CoinFarm.antiBotControl, Hub.CoinFarm.antiBotEnabled)
 		Hub.AutoPrestige.SetEnabled(flag8.autoPrestige == true)
 		fn48(Hub.AutoPrestige.control, Hub.AutoPrestige.enabled)
@@ -19618,7 +20319,7 @@ do
 			return false
 		end
 		local v9 = Hub.CoinFarm.GetCachedRole(localPlayer)
-		if Hub.CoinFarm.endRoundDeathRequested or v9 ~= "Sheriff" then
+		if Hub.CoinFarm.endRoundDeathRequested or (v9 ~= "Sheriff" and v9 ~= "Hero") then
 			return false
 		end
 
