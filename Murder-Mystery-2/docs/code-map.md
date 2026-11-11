@@ -1,6 +1,6 @@
 # Code Map
 
-Line ranges for [`main.luau`](../main.luau) (19,803 lines). Ranges mark boundaries of each functional block.
+Line ranges for [`main.luau`](../main.luau) (20,962 lines). Ranges mark boundaries of each functional block.
 
 ## Top to bottom
 
@@ -12,38 +12,38 @@ Line ranges for [`main.luau`](../main.luau) (19,803 lines). Ranges mark boundari
 | 19-58 | Clipboard & kick helpers | `FoxnameCopyToClipboard`, `FoxnameKickPlayer`. |
 | 59-84 | Shared locals & executor detection | `hookSupported`, `silentAimSupported`, `Tabs`, `UI_BUILD_DELAY = 0.08`. |
 | 85-105 | Runtime single-instance guard | `genv.__FoxnameMM2Runtime`, session id, duplicate run notification. |
-| 106-500 | Compatibility report & feature checks | Executor environment detection, compatibility scoring. |
-| 501-700 | WindUI setup & icons bridge | Multi-mirror fallback loader (raw GitHub, Fastly/CDN jsdelivr, releases), local cache (`Foxname/WindUI_cache.lua`), empty-tab placeholder collapse patch, and `GetIcons` bridge. |
-| 701-742 | `Window = WindUI:CreateWindow` | Window creation, gradient title, release tag. |
-| 743-881 | Tab initialization | Sidebar section, every `Window:Tab`, `Tabs` alias table, and empty tab placeholder watchers. |
-| 882-1002 | Discord & compatibility tabs | Live Discord community stats, feature compatibility view. |
-| 1003-1127 | `foxnameSendCompatibilityReport` | Sends anonymous compatibility telemetry if supported. |
-| 1128-1192 | Services & shared locals | `TeleportService`, character tracking, connection managers. |
-| 1193-1235 | `Hub` table | Default configuration values (`AimlockPart`, `AimStyle`, etc.). |
-| 1236-1949 | `Hub` state tables | Feature state objects (including `Hub.AvoidMurderer`, `Hub.AutoMapVote`). |
-| 1950-2155 | Progression | Auto Prestige, Auto Claim Reward. |
-| 2156-5667 | Coin Farm engine | Core farming routines (pathing, map index, coin collection, evasion). |
-| 5668-5957 | Coin Farm resume & ESP colors | Restores state from `genv.__FoxnameCoinFarmResume`, ESP color definitions. |
-| 5958-6516 | Webhook & Crosshair | Discord webhook formatting, Lucide cursor icon loading. |
-| 6517-8869 | Gameplay logic & hooks | Role identification, ESP render loop, noclip, safezone, remote listeners. |
-| 8870-8871 | Script re-execute URL | `Hub.ReexecuteScriptUrl` pointing to the OSS repository. |
-| 8875-9682 | Server hop & reconnect | Server browser API, low-player hopping, anti-bot hop, rejoin handler. |
-| 9685-9862 | Bomb Jump | `Hub.RunBombJump`, fake bomb remote interactions. |
-| 9863-11336 | Mobile touch buttons | `Hub.TouchButtons.*`, asset loader pulling from `OSS/Murder-Mystery-2/icons/`, safe GUI parenting (`getSafeGuiParent`). |
-| 11337-12762 | Invisibility & emote sync | Character offset seat trick, emote list merging, metamethod hook. |
-| 12763-13195 | Anims tab UI | Emote picker, speed slider, item sync. |
-| 13196-13400 | Radio tab UI | FE / local radio controls, audio ID input, volume slider. |
-| 13401-14247 | Visuals tab UI | ESP toggles, tracers, XRay, shaders, atmosphere, fog, snow. |
-| 14248-14348 | Crosshair tab UI | Cursor style, custom Lucide name, RGB options. |
-| 14349-14599 | Combat tab UI | Aimlock, silent aim hook parameters, Sheriff auto-shoot. |
-| 14600-15257 | Farm tab UI | Coin Farm settings, stats display, webhook config, event boxes. |
-| 15258-15600 | Player tab UI | WalkSpeed, jump power, speed glitch, noclip, anti-fling, fly controls. |
-| 15601-17140 | Player utilities & teleports | Flight loop, jerk, map voting logic (`runAutoMapVoteCycle`), teleport helper routines. |
-| 17141-17473 | Teleports tab UI | Quick teleport buttons (Murderer, Sheriff, Gun, Safezone, Lobby), TP to Voting Board, Auto Map Vote, Voting Board selector. |
-| 17474-18077 | Misc / Murderer tab UI | Spinbot, hitbox expander, avoid murderer, fling, knife aura, Throw Knife button toggle. |
-| 18078-19020 | Settings tab UI | Mobile button theme, WindUI themes, background URL, config file manager. |
-| 19021-19787 | Background loops & cleanup | Connection cleanup, infinite jump setup. |
-| 19788-19803 | Welcome notification | Fires once initialization is complete. |
+| 106-488 | Compatibility report & feature checks | Executor environment detection, compatibility scoring. |
+| 489-688 | WindUI setup & icons bridge | Multi-mirror fallback loader (raw GitHub, Fastly/CDN jsdelivr, releases), local cache (`Foxname/WindUI_cache.lua`), empty-tab placeholder collapse patch, and `GetIcons` bridge. |
+| 689-730 | `Window = WindUI:CreateWindow` | Window creation, gradient title, release tag. |
+| 731-869 | Tab initialization | Sidebar section, every `Window:Tab`, `Tabs` alias table, and empty tab placeholder watchers. |
+| 870-990 | Discord & compatibility tabs | Live Discord community stats, feature compatibility view. |
+| 991-1116 | `foxnameSendCompatibilityReport` | Sends anonymous compatibility telemetry if supported. |
+| 1117-1180 | Services & shared locals | `TeleportService`, character tracking, connection managers. |
+| 1181-1224 | `Hub` table | Default configuration values (`AimlockPart`, `AimStyle`, etc.). |
+| 1225-1660 | `Hub` state tables | Feature state objects (including `Hub.AvoidMurderer`, `Hub.AutoMapVote`). |
+| 1661-1681 | Progression | Auto Prestige, Auto Claim Reward. |
+| 1682-6567 | Coin Farm engine | Core farming routines (targeting methods, competitor detection, pathing, map index, coin collection, evasion). |
+| 6568-6857 | Coin Farm resume & ESP colors | Restores state from `genv.__FoxnameCoinFarmResume`, ESP color definitions. |
+| 6858-7416 | Webhook & Crosshair | Discord webhook formatting, Lucide cursor icon loading. |
+| 7417-9831 | Gameplay logic & hooks | Role identification, ESP render loop, noclip, safezone, remote listeners. |
+| 9832-9833 | Script re-execute URL | `Hub.ReexecuteScriptUrl` pointing to the OSS repository. |
+| 9834-10641 | Server hop & reconnect | Server browser API, low-player hopping, anti-bot hop, rejoin handler. |
+| 10642-10821 | Bomb Jump | `Hub.RunBombJump`, fake bomb remote interactions. |
+| 10822-12295 | Mobile touch buttons | `Hub.TouchButtons.*`, asset loader pulling from `OSS/Murder-Mystery-2/icons/`, safe GUI parenting (`getSafeGuiParent`). |
+| 12296-13705 | Invisibility & emote sync | Character offset seat trick, emote list merging, metamethod hook. |
+| 13706-14146 | Anims tab UI | Emote picker, speed slider, item sync. |
+| 14147-14351 | Radio tab UI | FE / local radio controls, audio ID input, volume slider. |
+| 14352-15243 | Visuals tab UI | ESP toggles, tracers, XRay, shaders, atmosphere, fog, snow. |
+| 15244-15344 | Crosshair tab UI | Cursor style, custom Lucide name, RGB options. |
+| 15345-15595 | Combat tab UI | Aimlock, silent aim hook parameters, Sheriff auto-shoot. |
+| 15596-16448 | Farm tab UI | Coin Farm settings, targeting methods, movement modes, stats display, webhook config, event boxes. |
+| 16449-17350 | Player tab UI | WalkSpeed, jump power, speed glitch, noclip, anti-fling, fly controls. |
+| 17351-18185 | Player utilities & teleports | Flight loop, jerk, map voting logic (`runAutoMapVoteCycle`), teleport helper routines. |
+| 18186-18518 | Teleports tab UI | Quick teleport buttons (Murderer, Sheriff, Gun, Safezone, Lobby), TP to Voting Board, Auto Map Vote, Voting Board selector. |
+| 18519-19129 | Misc / Murderer tab UI | Spinbot, hitbox expander, avoid murderer, fling, knife aura, Throw Knife button toggle. |
+| 19130-20173 | Settings tab UI | Auto execute, auto save/load config, mobile button theme, WindUI themes, background URL, config file manager. |
+| 20174-20944 | Background loops & cleanup | Connection cleanup, infinite jump setup. |
+| 20945-20962 | Welcome notification | Fires once initialization is complete. |
 
 ## Removed in OSS Release
 

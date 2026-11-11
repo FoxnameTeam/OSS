@@ -1,6 +1,6 @@
 # Murder Mystery 2 – Script Docs
 
-Documentation for [`main.luau`](../main.luau), a single-file Roblox executor script (about 20k lines) built on [WindUI](https://github.com/Footagesus/WindUI).
+Documentation for [`main.luau`](../main.luau), a single-file Roblox executor script (about 21k lines) built on [WindUI](https://github.com/Footagesus/WindUI).
 
 | Doc | What it covers |
 | --- | --- |
