@@ -57,7 +57,15 @@ FoxnameKickPlayer = function(arg, arg2)
 end
 
 local hookSupported, silentAimSupported, foxnameMM2Runtime, sessionId, isTerminated, WindUI, Window, isOwner
-local Tabs, UI_BUILD_DELAY = nil, 0.08
+local Tabs = nil
+local runService = game:GetService("RunService")
+local frameDeadline = os.clock() + 0.006
+local function budgetYield()
+	if os.clock() >= frameDeadline then
+		runService.Heartbeat:Wait()
+		frameDeadline = os.clock() + 0.006
+	end
+end
 
 do
 	local tbl2 = { Name = "Unknown executor", IsXeno = false, IsDelta = false }
@@ -519,68 +527,113 @@ do
 			end
 		end
 
+		local function replaceExact(s, target, repl)
+			local i, j = string.find(s, target, 1, true)
+			if i then
+				return string.sub(s, 1, i - 1) .. repl .. string.sub(s, j + 1)
+			end
+			return s
+		end
+
+		local function patchWindUI(src)
+			if string.find(src, "--[Foxname WindUI Patched]--", 1, true) then
+				return src
+			end
+
+			local str2 = src:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
+			str2 = str2:gsub("d=ak%.AddSignal%(ar%.UIElements%.ContainerFrame%.ChildAdded,%s*function%(%)%s*b%.Visible=false%s*d:Disconnect%(%)%s*end%)", "d=ak.AddSignal(ar.UIElements.ContainerFrame.ChildAdded,function(c) if c~=b and c.ClassName~='UIListLayout' and c.ClassName~='UIPadding' then b.Visible=false b.Size=UDim2.new(1,0,0,0) if d then d:Disconnect() end end end)\nif #ar.Elements>0 or #ar.UIElements.ContainerFrame:GetChildren()>3 then b.Visible=false b.Size=UDim2.new(1,0,0,0) end")
+
+			-- 1. Window Open layout solver isolation
+			str2 = replaceExact(str2, "ao(\"Frame\",{\nSize=UDim2.new(1,0,1,0),\nBackgroundTransparency=1,\nName=\"Main\",\n\nVisible=false,\nZIndex=97,\n},{\nao(\"UICorner\",{\nCornerRadius=UDim.new(0,aw.UICorner),\n}),", "ao(\"Frame\",{\nSize=UDim2.new(1,0,1,0),\nBackgroundTransparency=1,\nName=\"Main\",\nClipsDescendants=true,\n\nVisible=false,\nZIndex=97,\n},{\nao(\"UICorner\",{\nCornerRadius=UDim.new(0,aw.UICorner),\n}),")
+			str2 = replaceExact(str2, "aw.UIElements.Main.Size=UDim2.new(aw.Size.X.Scale,aw.Size.X.Offset,0,100)\n\nap(aw.UIElements.Main,0.8,{\n\nSize=aw.Size,\n},Enum.EasingStyle.Quint,Enum.EasingDirection.Out):Play()", "aw.UIElements.Main.Size=UDim2.new(aw.Size.X.Scale,aw.Size.X.Offset,0,100)\nlocal _origMB=aw._origMainBarSize or (aw.UIElements.MainBar and aw.UIElements.MainBar.Size)\nlocal _origSB=aw._origSideBarSize or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.Size)\naw._origMainBarSize=_origMB\naw._origSideBarSize=_origSB\nlocal _openFinalH=aw.Size.Y.Offset\nlocal _sbW=aw.SideBarWidth or (_origSB and _origSB.X.Offset>0 and _origSB.X.Offset) or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.AbsoluteSize.X) or 200\nif aw.UIElements.MainBar and aw.UIElements.SideBarContainer and _origMB and _origSB then\naw.UIElements.MainBar.Size=UDim2.new(1,-_sbW,0,_openFinalH-aw.Topbar.Height)\naw.UIElements.SideBarContainer.Size=UDim2.new(0,_sbW,0,_origSB.Y.Offset+_origSB.Y.Scale*_openFinalH)\ntask.delay(0.82,function()\nif aw.UIElements and aw.UIElements.MainBar and aw.UIElements.SideBarContainer then\naw.UIElements.MainBar.Size=_origMB\naw.UIElements.SideBarContainer.Size=_origSB\nend\nend)\nend\nap(aw.UIElements.Main,0.8,{\n\nSize=aw.Size,\n},Enum.EasingStyle.Quint,Enum.EasingDirection.Out):Play()")
+
+			-- 2. Hover shine listener leak fix
+			str2 = replaceExact(str2, "if ah.Hover then\naa.AddSignal(d.MouseEnter,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\naa.AddSignal(d.MouseMoved,function(g,h)\naB.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\naA.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend", "if ah.Hover then\nlocal _shineConn\naa.AddSignal(d.MouseEnter,function()\nif am then\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\nif _shineConn then _shineConn:Disconnect() _shineConn=nil end\n_shineConn=aa.AddSignal(d.MouseMoved,function(g,h)\nlocal _dw=d.AbsoluteSize.X\nif _dw>0 then\nlocal _off=((g-d.AbsolutePosition.X)/_dw)-0.5\naB.HoverGradient.Offset=Vector2.new(_off,0)\naA.HoverGradient.Offset=Vector2.new(_off,0)\nend\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif _shineConn then _shineConn:Disconnect() _shineConn=nil end\nif am then\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend")
+
+			-- 3. Tab switch tween targeting
+			str2 = replaceExact(str2, "for ar,as in next,ao.Tabs do\nif not as.Locked then", "for ar,as in next,ao.Tabs do\nif as.Selected and ar~=aq and not as.Locked then")
+
+			-- 4. Tab content slide Position translation
+			str2 = replaceExact(str2, "task.spawn(function()\nfor ar,as in next,ao.Containers do\nas.AnchorPoint=Vector2.new(0,0.05)\nas.Visible=false\nend\nao.Containers[aq].Visible=true\nlocal ar=game:GetService\"TweenService\"\n\nlocal as=TweenInfo.new(0.15,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)\nlocal at=ar:Create(ao.Containers[aq],as,{\nAnchorPoint=Vector2.new(0,0),\n})\nat:Play()\nend)", "task.spawn(function()\nfor ar,as in next,ao.Containers do\nas.Position=UDim2.new(0,0,0,14)\nas.Visible=false\nend\nao.Containers[aq].Position=UDim2.new(0,0,0,14)\nao.Containers[aq].Visible=true\nlocal ar=game:GetService\"TweenService\"\n\nlocal as=TweenInfo.new(0.15,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)\nlocal at=ar:Create(ao.Containers[aq],as,{\nPosition=UDim2.new(0,0,0,0),\n})\nat:Play()\nend)")
+
+			-- 5. Toggle switch duplicate tween removal
+			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Toggle\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "-- dup glass tween removed")
+			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Text\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0.85},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "-- dup glass tween removed")
+
+			-- 6. Dropdown item selection tween storm reduction
+			str2 = replaceExact(str2, "else\nfor aB,b in next,ap.Tabs do\nam(b.UIElements.TabItem,0.1,{ImageTransparency=1}):Play()\n\nam(\nb.UIElements.TabItem.Frame.Title.TextLabel,\n0.1,\n{TextTransparency=0.4}\n):Play()\nif b.UIElements.TabIcon then\nam(b.UIElements.TabIcon.ImageLabel,0.1,{ImageTransparency=0.2}):Play()\nend\nb.Selected=false\nend\naz.Selected=true", "else\nfor aB,b in next,ap.Tabs do\nif b.Selected and b~=az then\nam(b.UIElements.TabItem,0.1,{ImageTransparency=1}):Play()\nam(\nb.UIElements.TabItem.Frame.Title.TextLabel,\n0.1,\n{TextTransparency=0.4}\n):Play()\nif b.UIElements.TabIcon then\nam(b.UIElements.TabIcon.ImageLabel,0.1,{ImageTransparency=0.2}):Play()\nend\nb.Selected=false\nend\nend\naz.Selected=true")
+
+			-- 7. Closed dropdown position update bypass
+			str2 = replaceExact(str2, "function UpdatePosition()\nlocal au=ap.UIElements.Dropdown or ap.DropdownFrame.UIElements.Main", "function UpdatePosition()\nif not ap.Opened and not (ap.UIElements.MenuCanvas and ap.UIElements.MenuCanvas.Visible) then return end\nlocal au=ap.UIElements.Dropdown or ap.DropdownFrame.UIElements.Main")
+
+			-- 8. Slider live dragging & click direct size update
+			str2 = replaceExact(str2, "if aA~=aq then\nag(al.UIElements.SliderIcon.Frame,0.05,{Size=UDim2.new(d,0,1,0)}):Play()", "if aA~=aq then\nal.UIElements.SliderIcon.Frame.Size=UDim2.new(d,0,1,0)")
+			str2 = replaceExact(str2, "if aA~=aq then\nag(al.UIElements.SliderIcon.Frame,0.05,{Size=UDim2.new(g,0,1,0)}):Play()", "if aA~=aq then\nal.UIElements.SliderIcon.Frame.Size=UDim2.new(g,0,1,0)")
+
+			return "--[Foxname WindUI Patched]--\n" .. str2
+		end
+
 		local function compileSource(src)
 			if typeof(src) ~= "string" or #src < 400 then
 				return nil
 			end
-			local str2 = src:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
-			str2 = str2:gsub("d=ak%.AddSignal%(ar%.UIElements%.ContainerFrame%.ChildAdded,%s*function%(%)%s*b%.Visible=false%s*d:Disconnect%(%)%s*end%)", "d=ak.AddSignal(ar.UIElements.ContainerFrame.ChildAdded,function(c) if c~=b and c.ClassName~='UIListLayout' and c.ClassName~='UIPadding' then b.Visible=false b.Size=UDim2.new(1,0,0,0) if d then d:Disconnect() end end end)\nif #ar.Elements>0 or #ar.UIElements.ContainerFrame:GetChildren()>3 then b.Visible=false b.Size=UDim2.new(1,0,0,0) end")
+			local str2 = patchWindUI(src)
 			local chunk, err = loadstring(str2)
 			if chunk then
-				return chunk
+				return chunk, str2
 			end
 			return nil
 		end
 
 		local chunk = nil
-
-		for _, url in ipairs(urls) do
-			for attempt = 1, 2 do
-				local body = nil
-				if request_2 then
-					local ok, res = pcall(request_2, {
-						Url = url,
-						Method = "GET",
-						Headers = { ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
-					})
-					if ok and typeof(res) == "table" and (res.Body or res.body) then
-						local b = res.Body or res.body
-						if typeof(b) == "string" and #b > 400 then
-							body = b
-						end
-					end
-				end
-
-				if not body then
-					local ok, res = pcall(function()
-						return game:HttpGet(url)
-					end)
-					if ok and typeof(res) == "string" and #res > 400 then
-						body = res
-					end
-				end
-
-				if body then
-					chunk = compileSource(body)
-					if chunk then
-						tryWriteCache(body)
-						break
-					end
-				end
-
-				if attempt < 2 then
-					task.wait(0.15)
-				end
-			end
-			if chunk then
-				break
-			end
+		local cached = tryReadCache()
+		if cached then
+			chunk = compileSource(cached)
 		end
 
 		if not chunk then
-			local cached = tryReadCache()
-			if cached then
-				chunk = compileSource(cached)
+			for _, url in ipairs(urls) do
+				for attempt = 1, 2 do
+					local body = nil
+					if request_2 then
+						local ok, res = pcall(request_2, {
+							Url = url,
+							Method = "GET",
+							Headers = { ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+						})
+						if ok and typeof(res) == "table" and (res.Body or res.body) then
+							local b = res.Body or res.body
+							if typeof(b) == "string" and #b > 400 then
+								body = b
+							end
+						end
+					end
+
+					if not body then
+						local ok, res = pcall(function()
+							return game:HttpGet(url)
+						end)
+						if ok and typeof(res) == "string" and #res > 400 then
+							body = res
+						end
+					end
+
+					if body then
+						local compiledChunk, patchedSrc = compileSource(body)
+						if compiledChunk then
+							chunk = compiledChunk
+							tryWriteCache(patchedSrc or body)
+							break
+						end
+					end
+
+					if attempt < 2 then
+						task.wait(0.15)
+					end
+				end
+				if chunk then
+					break
+				end
 			end
 		end
 
@@ -593,6 +646,31 @@ do
 
 	WindUI = fn18()
 	foxnameMM2Runtime.windui = WindUI
+
+	task.spawn(function()
+		local ok, cp = pcall(game.GetService, game, "ContentProvider")
+		if ok and cp then
+			local assets = {
+				"rbxassetid://12187365364",
+				"rbxassetid://111665032676235",
+				"rbxassetid://108556680453287",
+				"rbxassetid://95600044758841",
+				"rbxassetid://8992230677",
+				"rbxassetid://133245078123989",
+				"rbxassetid://82503368188240",
+			}
+			local instances = {}
+			for _, assetId in ipairs(assets) do
+				local img = Instance.new("ImageLabel")
+				img.Image = assetId
+				table.insert(instances, img)
+			end
+			pcall(cp.PreloadAsync, cp, instances)
+			for _, inst in ipairs(instances) do
+				inst:Destroy()
+			end
+		end
+	end)
 
 	WindUI:AddTheme({
 		Name = "Lunar Abyss",
@@ -736,32 +814,32 @@ do
 			BoxBorder = true,
 			IconColor = Color3.fromRGB(120, 190, 255),
 		})
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 
 		local discordTab = v13:Tab({ Title = "Discord", Icon = "messages-square" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local compatTab = v13:Tab({ Title = "UNC / sUNC", Icon = "badge-check" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local visualsTab = Window:Tab({ Title = "Visuals", Icon = "eye" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local crosshairTab = Window:Tab({ Title = "Crosshair", Icon = "crosshair" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local combatTab = Window:Tab({ Title = "Combat", Icon = "crosshair" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local miscTab = Window:Tab({ Title = "Misc", Icon = "wrench" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local movementTab = Window:Tab({ Title = "Player", Icon = "user" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local farmTab = Window:Tab({ Title = "Farm", Icon = "coins" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local animsTab = Window:Tab({ Title = "Anims", Icon = "play" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local radioTab = Window:Tab({ Title = "Radio", Icon = "radio" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local teleportsTab = Window:Tab({ Title = "Teleports", Icon = "navigation" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 		local settingsTab = Window:Tab({ Title = "Settings", Icon = "settings" })
-		task.wait(UI_BUILD_DELAY)
+		budgetYield()
 
 		local tbl3 = {
 			Messages = v11,
@@ -785,76 +863,6 @@ do
 		tbl3.LocalPlayer = tbl3.Movement
 		tbl3.Aim = tbl3.Combat
 		tbl3.Player = tbl3.Movement
-
-		local function fixEmptyTab(tab)
-			if not tab or typeof(tab) ~= "table" or typeof(tab.UIElements) ~= "table" then
-				return
-			end
-			local container = tab.UIElements.ContainerFrame
-			if not container or typeof(container) ~= "Instance" or not container:IsA("ScrollingFrame") then
-				return
-			end
-
-			local function checkAndHide()
-				local hasElements = (tab.Elements and #tab.Elements > 0)
-				for _, child in ipairs(container:GetChildren()) do
-					if child:IsA("GuiObject") and child.ClassName ~= "UIListLayout" and child.ClassName ~= "UIPadding" then
-						local tl = child:FindFirstChildWhichIsA("TextLabel", true)
-						local isPlaceholder = tl and string.find(string.lower(tl.Text), "empty")
-						if not isPlaceholder then
-							hasElements = true
-							break
-						end
-					end
-				end
-
-				if hasElements then
-					for _, child in ipairs(container:GetChildren()) do
-						if child:IsA("Frame") then
-							local tl = child:FindFirstChildWhichIsA("TextLabel", true)
-							if tl and string.find(string.lower(tl.Text), "empty") then
-								child.Visible = false
-								child.Size = UDim2.new(1, 0, 0, 0)
-							end
-						end
-					end
-				end
-			end
-
-			checkAndHide()
-			container.ChildAdded:Connect(function()
-				task.defer(checkAndHide)
-			end)
-		end
-
-		for _, tab in pairs(tbl3) do
-			fixEmptyTab(tab)
-		end
-
-		task.defer(function()
-			local mainBar = Window and typeof(Window.UIElements) == "table" and Window.UIElements.MainBar
-			if mainBar and typeof(mainBar) == "Instance" then
-				mainBar.DescendantAdded:Connect(function(descendant)
-					if descendant:IsA("TextLabel") and string.find(string.lower(descendant.Text), "empty") then
-						local parentFrame = descendant.Parent
-						if parentFrame and parentFrame:IsA("Frame") and parentFrame.Parent and parentFrame.Parent:IsA("ScrollingFrame") then
-							local scroller = parentFrame.Parent
-							local hasContent = false
-							for _, c in ipairs(scroller:GetChildren()) do
-								if c ~= parentFrame and c:IsA("GuiObject") and c.ClassName ~= "UIListLayout" and c.ClassName ~= "UIPadding" then
-									hasContent = true
-									break
-								end
-							end
-							if hasContent then
-								parentFrame.Visible = false
-								parentFrame.Size = UDim2.new(1, 0, 0, 0)
-							end
-						end
-					end
-				end)
-			end
-		end)
 
 		return tbl3
 	end
@@ -955,7 +963,7 @@ do
 		end,
 	})
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Discord:Button({
 		Title = "Refresh Discord Info",
@@ -979,7 +987,7 @@ do
 		ImageSize = 38,
 	})
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Compatibility:Paragraph({
 		Title = "Feature Support",
@@ -7883,7 +7891,49 @@ do
 		end
 	end))
 
+	local hasDrawingImmediate = type(DrawingImmediate) == "table" and type(DrawingImmediate.GetPaint) == "function"
+	local hasDrawing = type(Drawing) == "table" and type(Drawing.new) == "function"
+
+	local immediateLines = {}
+	if hasDrawingImmediate then
+		DrawingImmediate.GetPaint(15):Connect(function()
+			if not foxnameMM2Runtime.alive or isTerminated then
+				return
+			end
+			for lineData in pairs(immediateLines) do
+				if lineData.Visible then
+					DrawingImmediate.Line(lineData.From, lineData.To, lineData.Color, 1, lineData.Thickness)
+				end
+			end
+		end)
+	end
+
 	local function createFrame(arg)
+		if hasDrawingImmediate then
+			local lineData = {
+				IsImmediate = true,
+				From = Vector2.zero,
+				To = Vector2.zero,
+				Color = Color3.new(1, 1, 1),
+				Thickness = arg or 2,
+				Visible = false,
+			}
+			immediateLines[lineData] = true
+			return lineData
+		elseif hasDrawing then
+			local ok, line = pcall(function()
+				local l = Drawing.new("Line")
+				l.Thickness = arg or 2
+				l.Color = Color3.new(1, 1, 1)
+				l.Transparency = 1
+				l.Visible = false
+				return l
+		end)
+		if ok and line then
+			return line
+		end
+		end
+
 		local frame = Instance.new("Frame")
 		frame.Name = "ESPLine"
 		frame.BorderSizePixel = 0
@@ -7902,10 +7952,15 @@ do
 			return
 		end
 
-		if typeof(arg) == "Instance" then
+		if type(arg) == "table" and arg.IsImmediate then
+			arg.Visible = false
+			immediateLines[arg] = nil
+		elseif typeof(arg) == "Instance" then
 			arg:Destroy()
 		elseif type(arg.Remove) == "function" then
 			arg:Remove()
+		elseif type(arg.Destroy) == "function" then
+			arg:Destroy()
 		end
 	end
 
@@ -7917,6 +7972,24 @@ do
 		local magnitude = n2.Magnitude
 		if magnitude < 1 then
 			arg.Visible = false
+			return
+		end
+
+		if type(arg) == "table" and arg.IsImmediate then
+			if backgroundColor3 then
+				arg.Color = backgroundColor3
+			end
+			arg.From = arg2
+			arg.To = arg3
+			arg.Visible = true
+			return
+		elseif typeof(arg) ~= "Instance" and type(arg.From) ~= "nil" then
+			if backgroundColor3 then
+				arg.Color = backgroundColor3
+			end
+			arg.From = arg2
+			arg.To = arg3
+			arg.Visible = true
 			return
 		end
 
@@ -9073,14 +9146,20 @@ do
 			if Hub.MobileRoundTimerGui and Hub.MobileRoundTimerGui.Parent then
 				return Hub.MobileRoundTimerGui:FindFirstChild("Timer")
 			end
+			local safeParent = getSafeGuiParent()
+			local oldGui = safeParent and safeParent:FindFirstChild("FoxnameMobileRoundTimer")
+			if oldGui then
+				oldGui:Destroy()
+			end
 			local playerGui = localPlayer:FindFirstChildOfClass("PlayerGui")
+			if playerGui then
+				local oldGui2 = playerGui:FindFirstChild("FoxnameMobileRoundTimer")
+				if oldGui2 then
+					oldGui2:Destroy()
+				end
+			end
 			if not playerGui then
 				return nil
-			end
-			local foxnameMobileRoundTimer = playerGui:FindFirstChild("FoxnameMobileRoundTimer")
-
-			if foxnameMobileRoundTimer then
-				foxnameMobileRoundTimer:Destroy()
 			end
 
 			local screenGui = Instance.new("ScreenGui")
@@ -9118,7 +9197,7 @@ do
 			clone.Size = UDim2.fromOffset(150, 75)
 			clone.Visible = false
 			clone.Parent = screenGui
-			screenGui.Parent = playerGui
+			screenGui.Parent = getSafeGuiParent()
 			Hub.MobileRoundTimerGui = screenGui
 			return clone
 		end
@@ -11260,11 +11339,13 @@ do
 					ok = ok and fn41(result)
 				end
 
-				local ok2, result = pcall(game.HttpGet, game, "https://raw.githubusercontent.com/FoxnameTeam/OSS/main/Murder-Mystery-2/icons/" .. arg)
+				if not ok then
+					local ok2, result = pcall(game.HttpGet, game, "https://raw.githubusercontent.com/FoxnameTeam/OSS/main/Murder-Mystery-2/icons/" .. arg)
 
-				if ok2 and fn41(result) then
-					writefile(str, result)
-					ok = true
+					if ok2 and fn41(result) then
+						writefile(str, result)
+						ok = true
+					end
 				end
 
 				if not ok then
@@ -13760,7 +13841,7 @@ local function fn37()
 		end
 	end
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Anims:Dropdown({
 		Title = "Ready Animations",
@@ -13900,7 +13981,7 @@ local function fn37()
 		end,
 	})
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Anims:Button({
 		Title = "Sync In-Game Emotes",
@@ -14201,7 +14282,7 @@ do
 		end
 	end
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Radio:Paragraph({
 		Title = "FE Radio",
@@ -14233,7 +14314,7 @@ do
 		end,
 	})
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Radio:Slider({
 		Title = "Local Volume",
@@ -14406,7 +14487,7 @@ do
 		end
 	end)
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.ESP:Toggle({
 		Title = "Player ESP",
@@ -14533,7 +14614,7 @@ Tabs.ESP:Slider({
 	end,
 })
 
-task.wait(UI_BUILD_DELAY)
+budgetYield()
 
 Tabs.ESP:Toggle({ Title = "Coin ESP", Flag = "ESP_Coin", Default = false, Callback = fn34 })
 
@@ -15160,7 +15241,7 @@ do
 		end
 	end
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.ESP:Section({ Title = "Shaders & Lighting", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -15190,7 +15271,7 @@ do
 		end,
 	})
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.ESP:Section({ Title = "Skybox / Weather", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -15298,7 +15379,7 @@ do
 	end
 end
 
-task.wait(UI_BUILD_DELAY)
+budgetYield()
 
 Tabs.Crosshair:Toggle({
 	Title = "Custom Crosshair",
@@ -15399,7 +15480,7 @@ Hub.SyncConfigColorValues = function()
 	end
 end
 
-task.wait(UI_BUILD_DELAY)
+budgetYield()
 
 Tabs.Combat:Section({ Title = "Aim", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -15551,7 +15632,7 @@ Tabs.Aim:Toggle({
 	end,
 })
 
-task.wait(UI_BUILD_DELAY)
+budgetYield()
 
 Tabs.Combat:Section({ Title = "Sheriff", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -15776,7 +15857,7 @@ Tabs.Farm:Button({
 	end,
 })
 
-task.wait(UI_BUILD_DELAY)
+budgetYield()
 
 Hub.CoinFarm.blackScreenControl = Tabs.Farm:Toggle({
 	Title = "Black Screen",
@@ -16315,7 +16396,7 @@ do
 	end
 
 	eventBox.selectedCurrency = selectedBox[1] ~= "Unavailable" and selectedBox[1] or nil
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Farm:Section({ Title = "Event Boxes", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -16388,7 +16469,7 @@ local function fn38(arg)
 	end
 end
 
-task.wait(UI_BUILD_DELAY)
+budgetYield()
 
 Tabs.LocalPlayer:Slider({
 	Title = "Field of View",
@@ -18240,7 +18321,7 @@ do
 		Hub.TouchButtons.ToggleThrowKnifeButton(arg)
 	end
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Teleports:Button({
 		Title = "TP to Murderer",
@@ -18573,7 +18654,7 @@ do
 		end)
 	end
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Combat:Section({ Title = "Murderer", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -19226,7 +19307,7 @@ local function fn39()
 	end
 
 	local nowUsingTheme = tbl7[1]
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Settings:Section({ Title = "Theme / Background", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -19307,7 +19388,7 @@ local function fn39()
 		end,
 	})
 
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Settings:Section({ Title = "Keybind", TextXAlignment = "Center", TextSize = 17, Opened = true })
 
@@ -19321,7 +19402,7 @@ local function fn39()
 	})
 
 	Tabs.Settings:Divider()
-	task.wait(UI_BUILD_DELAY)
+	budgetYield()
 
 	Tabs.Settings:Section({ Title = "Configs", TextXAlignment = "Center", TextSize = 17, Opened = true })
 	local configManager = Window.ConfigManager
@@ -20301,7 +20382,7 @@ local function fn39()
 	fn64()
 end
 
-task.wait(UI_BUILD_DELAY)
+budgetYield()
 fn39()
 
 local function fn40()
@@ -20321,8 +20402,36 @@ local function fn40()
 	local str = "Foxname_MM2_Aim_" .. sessionId
 	local flag7 = false
 
+	local fovDrawingImmediate = type(DrawingImmediate) == "table" and type(DrawingImmediate.GetPaint) == "function"
+	local fovDrawingCircle = nil
+
+	if fovDrawingImmediate then
+		DrawingImmediate.GetPaint(20):Connect(function()
+			if not foxnameMM2Runtime.alive or isTerminated then
+				return
+			end
+			if Hub.AimEnabled and not Hub.HideFOV then
+				local center = currentCamera.ViewportSize / 2
+				local color = Color3.fromHSV(os.clock() * 0.35 % 1, 1, 1)
+				DrawingImmediate.Circle(center, Hub.FOV, color, 1, 64, 2)
+			end
+		end)
+	elseif type(Drawing) == "table" and type(Drawing.new) == "function" then
+		local ok, circle = pcall(function()
+			local c = Drawing.new("Circle")
+			c.Thickness = 2
+			c.NumSides = 64
+			c.Filled = false
+			c.Visible = false
+			return c
+		end)
+		if ok and circle then
+			fovDrawingCircle = circle
+		end
+	end
+
 	local function fn41()
-		if v9 and v9.Parent then
+		if fovDrawingImmediate or fovDrawingCircle or (v9 and v9.Parent) then
 			return
 		end
 		local frame = Instance.new("Frame")
@@ -20457,22 +20566,39 @@ local function fn40()
 	end
 
 	local function fn47()
-		fn41()
 		local visible = Hub.AimEnabled and not Hub.HideFOV
-		v9.Visible = visible
 
-		if visible then
-			local now = os.clock()
-
-			if (UserInputService.TouchEnabled and 0.05 or 0.033333333333333333) <= now - tbl7.lastFOVColorAt then
-				tbl7.lastFOVColorAt = now
-				v10.Color = Color3.fromHSV(now * 0.35 % 1, 1, 1)
+		if fovDrawingImmediate then
+			-- DrawingImmediate handles rendering in GetPaint(20) callback
+		elseif fovDrawingCircle then
+			fovDrawingCircle.Visible = visible
+			if visible then
+				local now = os.clock()
+				fovDrawingCircle.Color = Color3.fromHSV(now * 0.35 % 1, 1, 1)
+				fovDrawingCircle.Radius = Hub.FOV
+				fovDrawingCircle.Position = currentCamera.ViewportSize / 2
 			end
+		else
+			fn41()
+			if v9 then
+				v9.Visible = visible
 
-			if Hub.FOV ~= tbl7.lastFOV then
-				tbl7.lastFOV = Hub.FOV
-				v9.Size = UDim2.new(0, Hub.FOV * 2, 0, Hub.FOV * 2)
-				v9.Position = UDim2.fromScale(0.5, 0.5)
+				if visible then
+					local now = os.clock()
+
+					if (UserInputService.TouchEnabled and 0.05 or 0.033333333333333333) <= now - tbl7.lastFOVColorAt then
+						tbl7.lastFOVColorAt = now
+						if v10 then
+							v10.Color = Color3.fromHSV(now * 0.35 % 1, 1, 1)
+						end
+					end
+
+					if Hub.FOV ~= tbl7.lastFOV then
+						tbl7.lastFOV = Hub.FOV
+						v9.Size = UDim2.new(0, Hub.FOV * 2, 0, Hub.FOV * 2)
+						v9.Position = UDim2.fromScale(0.5, 0.5)
+					end
+				end
 			end
 		end
 
@@ -20516,6 +20642,9 @@ local function fn40()
 
 		if v9 then
 			v9.Visible = false
+		end
+		if fovDrawingCircle then
+			fovDrawingCircle.Visible = false
 		end
 	end
 

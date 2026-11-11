@@ -8,7 +8,7 @@ Open-source Roblox executor script for **Murder Mystery 2**, built on WindUI.
 | --- | --- |
 | Visuals | Player / Gun / Nametag / Line / 360 ESP, bullet tracer, XRay, shaders, skybox, fog, snow |
 | Crosshair | Custom crosshair styles, RGB, custom cursor |
-| Combat | Aimlock, silent aim, FOV, prediction, sheriff auto shoot |
+| Combat | Aimlock, silent aim, FOV circle, prediction, sheriff auto shoot |
 | Player | WalkSpeed, speed glitch, noclip, fly, infinite jump, anti fling, invisibility |
 | Farm | Coin farm, auto prestige, auto claim, server hop, anti bot, webhook, event boxes |
 | Anims | In-game emote / item sync, custom emotes, instant gun pickup |
@@ -19,7 +19,7 @@ Full details: [docs/README.md](docs/README.md).
 
 ## Usage
 
-Run [`main.luau`](main.luau) in a Roblox executor. It needs `getgenv`, `loadstring`, `game:HttpGet`, `writefile`/`readfile`, and `request`.
+Run [`main.luau`](main.luau) in a Roblox executor. Requires `getgenv`, `loadstring`, `game:HttpGet`, `writefile`/`readfile`, and `request`. Supports `DrawingImmediate` (Potassium) and `Drawing` for hardware-accelerated overlays.
 
 ```lua
 loadstring(game:HttpGet("https://raw.githubusercontent.com/FoxnameTeam/OSS/main/Murder-Mystery-2/main.luau"))()

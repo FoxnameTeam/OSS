@@ -2,7 +2,7 @@
 
 Reference for all in-game options per tab.
 
-## Discord / UNC / sUNC (870-990)
+## Discord / UNC / sUNC (869-998)
 
 | Option | Notes |
 | --- | --- |
@@ -10,38 +10,38 @@ Reference for all in-game options per tab.
 | Copy Discord Invite / Refresh Info | Copies community invite link and refreshes stats. |
 | Executor & Feature Support | Diagnostic table displaying which executor environment APIs are supported. |
 
-## Visuals (14411-15302)
+## Visuals (14492-15383)
 
 | Option | Line | Notes |
 | --- | --- | --- |
-| Player ESP & ESP Style | 14411+ | Highlights character models by match role (Innocent, Sheriff, Murderer, Zombie). |
-| Line ESP, Nametag ESP, 360 ESP | | Tracers, player name tags with distance, screen-edge indicators. |
+| Player ESP & ESP Style | 14492+ | Highlights character models by match role (Innocent, Sheriff, Murderer, Zombie). |
+| Line ESP, Nametag ESP, 360 ESP | 14530+ | Tracers (rendered with 3-tier hardware overlay: `DrawingImmediate` -> `Drawing` -> `Frame`), player name tags with distance, screen-edge indicators. |
 | Gun ESP, Dropped Gun Notify | | Highlights dropped Sheriff gun and sends UI notifications. |
 | Bullet Tracer | | Colored tracers with custom duration. |
-| Coin ESP | 14492 | Highlight outline for spawned coins (`ESP_Coin`). |
-| XRay | 14515 | Makes obstruction parts semi-transparent (`xrayTransparency = 0.72`). Includes mobile button. |
-| Shaders & Atmosphere | 15165+ | Shader presets, specular scale, skybox, snowflake density, and fog density. |
+| Coin ESP | 14573 | Highlight outline for spawned coins (`ESP_Coin`). |
+| XRay | 14596 | Makes obstruction parts semi-transparent (`xrayTransparency = 0.72`). Includes mobile button. |
+| Shaders & Atmosphere | 15246+ | Shader presets, specular scale, skybox, snowflake density, and fog density. |
 
-## Crosshair (15303-15403)
+## Crosshair (15384-15484)
 
 Custom crosshair rendering with Lucide icon cursor support, size adjustment, and RGB color cycles.
 
-## Combat (15404-15654, 18578-19188)
+## Combat (15485-15735, 18659-19269)
 
-### Aim (15404+)
+### Aim (15485+)
 - **Aim Style**: Smooth camera tracking or silent aim metamethod interception.
-- **Controls**: FOV circle slider, wall check toggle, role constraint ("Only Aim While Sheriff"), prediction factor.
+- **Controls**: FOV circle slider (rendered with 3-tier hardware overlay: `DrawingImmediate` -> `Drawing` -> `Frame`), wall check toggle, role constraint ("Only Aim While Sheriff"), prediction factor.
 - **Mobile Action**: Dedicated Aimlock touch button with draggable positioning.
 
-### Sheriff (15556+)
+### Sheriff (15637+)
 - Auto-shoot trigger with customizable target body part (Head/Torso).
 - On-screen touch button and keyboard keybind activation.
 
-### Murderer (18578+)
+### Murderer (18659+)
 - **Throw Knife Button**: On-screen action touch button with draggable positioning and direct toggle synchronization.
 - **Combat Aids**: Knife Aura, Hitbox Expander, and Kill All automation.
 
-## Player (16508-17409)
+## Player (16589-17489)
 
 | Option | Notes |
 | --- | --- |
@@ -54,41 +54,35 @@ Custom crosshair rendering with Lucide icon cursor support, size adjustment, and
 | Invisibility | Seat-based character offset technique. |
 | Jerk | Custom character motion simulation. |
 
-## Farm (15655-16507)
+## Farm (15736-16588)
 
 - **Progression**: Auto-prestige upon level requirement and automatic seasonal reward claiming.
 - **Coin Farm Core**:
-  - **Movement Modes**: `Stop and Go` (settles for 0.3s after coin touch) and `Continuous` (touches in-flight within 4 studs and immediately transitions to next coin without stopping).
-  - **Targeting Methods**:
-    - `Advanced method`: Precise 3D trajectory pathfinding evaluating all map coins sorted by distance. Excludes non-collectors (Murderer, Zombies, dead players) and projects competitor velocities to compute point of closest approach (PCA) and intercept times against local player speed. Rejects coins on different vertical floors (`yDiff > 6.5` studs), coins in competitor touch range, and coins within danger radius (`<= 30` studs) of any active murderer/zombie. Precalculates continuous next coins factoring remaining path travel distance. Guaranteed to select the closest uncontested coin, or closest overall coin if all are contested.
-    - `Simple method`: Top-K candidate pool with deterministic per-player `UserId` distribution or random selection for multi-bot environments.
-  - **Lobby Coin Farm**: Teleports from lobby to coins and immediately returns after collection while respecting bag-full, XP farm, and murderer safety.
-  - **End Round Modes**: `Normal (shooting)`, `Shoot only if Gun Dropped`, `Fling Murderer`, `Fling All`.
-  - **Evasion & Safety**: Furthest-spawn safe teleports, noclip limb stabilization, and transit evasion grace windows.
-  - **Display & Performance**: Black screen overlay and 3D rendering disabling toggles.
-- **Server Hopping**: Low player count hopping, anti-bot hop, and timer-based hopping with configurable intervals.
-- **Event Boxes**: Automatic crate and box purchasing by currency.
+  - Targeting Methods: Advanced (optimal cluster pathing) or Simple (nearest coin).
+  - Movement Modes: Stop and Go (stealthy step intervals) or Continuous (steady navigation).
+  - Safety & Evasion: Murderer avoidance radius, safezone teleports, black screen CPU throttling, rendering suppression.
+  - Automation: Anti-bot server hopping, player threshold triggers, scheduled hop timer, Discord webhook statistics dispatch.
+  - Event Boxes: Auto-buy seasonal crates with selectable currencies.
 
-## Anims (13765-14205)
+## Anims (13846-14286)
 
-Emote wheel synchronization, emote playback speed controls, item synchronization, instant dropped gun retrieval, and wall glitch helper.
+- Emote browser with synchronization hooks.
+- Custom animation player and playback speed multiplier.
+- Instant gun pickup helper.
 
-## Radio (14206-14410)
+## Radio (14287-14491)
 
-Custom audio ID player with local volume settings and FilteringEnabled replication via game sound remotes.
+- Client-side and FE audio playback.
+- Track search, custom Sound ID input, and volume normalization.
 
-## Teleports (18245-18577)
+## Teleports (18326-18658)
 
-| Option | Notes |
-| --- | --- |
-| Quick Teleports | Instant transitions to Murderer, Sheriff, Dropped Gun, Safezone, Lobby, Game Arena, and selected players. |
-| TP to Voting Board | Teleports player character directly to the active voting board pad oriented toward the map preview adornee, accompanied by a toast notification displaying the target map name. |
-| Auto Map Vote | Background polling cycle that detects active lobby voting across seasonal lobby maps (Normal, Summer, Halloween, Christmas, Easter), teleports to the designated board, tracks vote confirmation, and resets character to loop vote casting. |
-| Voting Board Selector | Dropdown selecting active voting pad target (`Board 1`, `Board 2`, or `Board 3`). |
+- Instant location presets: Murderer, Sheriff, Dropped Gun, Safezone, Lobby.
+- Lobby Map Voting: Automated voting board interaction (`runAutoMapVoteCycle`) with configurable board target.
 
-## Settings (19189-20232)
+## Settings (19270-20359)
 
-- **Auto Execute**: Toggles automatic script re-execution upon server hops via `queue_on_teleport`.
-- **Auto Load Config**: Automatically loads designated profile on script startup.
-- **Auto Save Config**: Periodically persists active settings to disk.
-- **Theming & Profiles**: WindUI theme selector, background image customizer, mobile touch button accent palette, and local configuration profile persistence (`Window.ConfigManager`).
+- Configuration manager: Save, load, and auto-restore profiles (`WindUI/Foxname_MM2/config/`).
+- Mobile action button customization: Shape, size, and accent styling.
+- Interface themes: Built-in presets and custom background image URLs.
+- Automation toggles: Auto execute on teleport, auto save (60s timer), and auto load on startup.

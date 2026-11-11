@@ -23,7 +23,7 @@ Every saved option has a unique `Flag` string (for example `ESP_Coin`, `Farm_Tar
 | `Settings_MobileButtonAccent` | Settings | Custom accent color for on-screen action buttons. |
 | `Visuals_Fog` | Visuals | Toggles custom environmental fog density and color. |
 
-## Configs (Settings tab, lines 19189-20232)
+## Configs (Settings tab, lines 19270-20359)
 
 | Action | Notes |
 | --- | --- |
@@ -40,8 +40,11 @@ Every saved option has a unique `Flag` string (for example `ESP_Coin`, `Farm_Tar
 
 ## WindUI & Asset Caching
 
-- **WindUI Library Cache**: Downloaded WindUI source is cached on the executor client at `Foxname/WindUI_cache.lua` (with a local fallback check for `WindUI.lua`) to avoid repeated network requests.
-- **Button Assets**: Mobile button PNG icons are fetched from GitHub and cached locally on the executor at `FoxnameMM2/icons_v1/<name>.png` using `getcustomasset` / `getsynasset`.
+- **WindUI Library Cache**: Pre-patched WindUI source is cached on the executor client at `Foxname/WindUI_cache.lua` with a `--[Foxname WindUI Patched]--` header. The loader checks local cache *first*, bypassing network requests and 260KB of regex pattern evaluations on subsequent executions (<10ms load time).
+- **Button Assets**: Mobile button PNG icons are checked on disk (`FoxnameMM2/icons_v1/<name>.png`) before network fetching. If valid PNG data exists on disk, zero HTTP requests are issued.
+- **Core Asset Preloading**: WindUI custom fonts, squircle textures, and MM2 backgrounds are preloaded asynchronously into VRAM on startup via `ContentProvider:PreloadAsync` to eliminate first-interaction freezes.
+- **Hardware Overlay Rendering**: ESP snaplines and Aimlock FOV circle utilize Potassium's native `DrawingImmediate` hardware pipeline when available (with fallbacks to `Drawing` and Roblox `GuiObject`s), completely avoiding ScreenGui canvas dirtying.
+- **Mobile Round Timer**: Parented safely to `getSafeGuiParent()` (`gethui()`) with cleanup across both `getSafeGuiParent()` and `PlayerGui`.
 
 ## Mobile Touch Buttons
 
@@ -58,7 +61,3 @@ Each button includes:
 
 Button asset files are stored locally in the repository under [icons/](../icons) and fetched over raw GitHub content:
 `https://raw.githubusercontent.com/FoxnameTeam/OSS/main/Murder-Mystery-2/icons/<name>.png`
-
-## Server Hop State Transfer
-
-When hopping servers, current farm session statistics and active flags (speed, mode, movement mode, targeting method, lobby farm, end-round mode, server hop timer, auto execute, auto save) are serialized to JSON in `Foxname_MM2/coin_farm_resume.json` and saved in `genv.__FoxnameCoinFarmResume`. `queue_on_teleport` re-launches the script from `Hub.ReexecuteScriptUrl` once the new server finishes loading.
