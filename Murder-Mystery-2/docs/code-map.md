@@ -1,6 +1,6 @@
 # Code Map
 
-Line ranges for [`main.luau`](../main.luau) (20,962 lines). Ranges mark boundaries of each functional block.
+Line ranges for [`main.luau`](../main.luau) (21,021 lines). Ranges mark boundaries of each functional block.
 
 ## Top to bottom
 
@@ -22,28 +22,28 @@ Line ranges for [`main.luau`](../main.luau) (20,962 lines). Ranges mark boundari
 | 1181-1224 | `Hub` table | Default configuration values (`AimlockPart`, `AimStyle`, etc.). |
 | 1225-1660 | `Hub` state tables | Feature state objects (including `Hub.AvoidMurderer`, `Hub.AutoMapVote`). |
 | 1661-1681 | Progression | Auto Prestige, Auto Claim Reward. |
-| 1682-6567 | Coin Farm engine | Core farming routines (targeting methods, competitor detection, pathing, map index, coin collection, evasion). |
-| 6568-6857 | Coin Farm resume & ESP colors | Restores state from `genv.__FoxnameCoinFarmResume`, ESP color definitions. |
-| 6858-7416 | Webhook & Crosshair | Discord webhook formatting, Lucide cursor icon loading. |
-| 7417-9831 | Gameplay logic & hooks | Role identification, ESP render loop, noclip, safezone, remote listeners. |
-| 9832-9833 | Script re-execute URL | `Hub.ReexecuteScriptUrl` pointing to the OSS repository. |
-| 9834-10641 | Server hop & reconnect | Server browser API, low-player hopping, anti-bot hop, rejoin handler. |
-| 10642-10821 | Bomb Jump | `Hub.RunBombJump`, fake bomb remote interactions. |
-| 10822-12295 | Mobile touch buttons | `Hub.TouchButtons.*`, asset loader pulling from `OSS/Murder-Mystery-2/icons/`, safe GUI parenting (`getSafeGuiParent`). |
-| 12296-13705 | Invisibility & emote sync | Character offset seat trick, emote list merging, metamethod hook. |
-| 13706-14146 | Anims tab UI | Emote picker, speed slider, item sync. |
-| 14147-14351 | Radio tab UI | FE / local radio controls, audio ID input, volume slider. |
-| 14352-15243 | Visuals tab UI | ESP toggles, tracers, XRay, shaders, atmosphere, fog, snow. |
-| 15244-15344 | Crosshair tab UI | Cursor style, custom Lucide name, RGB options. |
-| 15345-15595 | Combat tab UI | Aimlock, silent aim hook parameters, Sheriff auto-shoot. |
-| 15596-16448 | Farm tab UI | Coin Farm settings, targeting methods, movement modes, stats display, webhook config, event boxes. |
-| 16449-17350 | Player tab UI | WalkSpeed, jump power, speed glitch, noclip, anti-fling, fly controls. |
-| 17351-18185 | Player utilities & teleports | Flight loop, jerk, map voting logic (`runAutoMapVoteCycle`), teleport helper routines. |
-| 18186-18518 | Teleports tab UI | Quick teleport buttons (Murderer, Sheriff, Gun, Safezone, Lobby), TP to Voting Board, Auto Map Vote, Voting Board selector. |
-| 18519-19129 | Misc / Murderer tab UI | Spinbot, hitbox expander, avoid murderer, fling, knife aura, Throw Knife button toggle. |
-| 19130-20173 | Settings tab UI | Auto execute, auto save/load config, mobile button theme, WindUI themes, background URL, config file manager. |
-| 20174-20944 | Background loops & cleanup | Connection cleanup, infinite jump setup. |
-| 20945-20962 | Welcome notification | Fires once initialization is complete. |
+| 1682-6626 | Coin Farm engine | Core farming routines (targeting methods, competitor detection, pathing, map index, coin collection, evasion). |
+| 6627-6916 | Coin Farm resume & ESP colors | Restores state from `genv.__FoxnameCoinFarmResume`, ESP color definitions. |
+| 6917-7475 | Webhook & Crosshair | Discord webhook formatting, Lucide cursor icon loading. |
+| 7476-9890 | Gameplay logic & hooks | Role identification, ESP render loop, noclip, safezone, remote listeners. |
+| 9891-9892 | Script re-execute URL | `Hub.ReexecuteScriptUrl` pointing to the OSS repository. |
+| 9893-10700 | Server hop & reconnect | Server browser API, low-player hopping, anti-bot hop, rejoin handler. |
+| 10701-10880 | Bomb Jump | `Hub.RunBombJump`, fake bomb remote interactions. |
+| 10881-12354 | Mobile touch buttons | `Hub.TouchButtons.*`, asset loader pulling from `OSS/Murder-Mystery-2/icons/`, safe GUI parenting (`getSafeGuiParent`). |
+| 12355-13764 | Invisibility & emote sync | Character offset seat trick, emote list merging, metamethod hook. |
+| 13765-14205 | Anims tab UI | Emote picker, speed slider, item sync. |
+| 14206-14410 | Radio tab UI | FE / local radio controls, audio ID input, volume slider. |
+| 14411-15302 | Visuals tab UI | ESP toggles, tracers, XRay, shaders, atmosphere, fog, snow. |
+| 15303-15403 | Crosshair tab UI | Cursor style, custom Lucide name, RGB options. |
+| 15404-15654 | Combat tab UI | Aimlock, silent aim hook parameters, Sheriff auto-shoot. |
+| 15655-16507 | Farm tab UI | Coin Farm settings, targeting methods, movement modes, stats display, webhook config, event boxes. |
+| 16508-17409 | Player tab UI | WalkSpeed, jump power, speed glitch, noclip, anti-fling, fly controls. |
+| 17410-18244 | Player utilities & teleports | Flight loop, jerk, map voting logic (`runAutoMapVoteCycle`), teleport helper routines. |
+| 18245-18577 | Teleports tab UI | Quick teleport buttons (Murderer, Sheriff, Gun, Safezone, Lobby), TP to Voting Board, Auto Map Vote, Voting Board selector. |
+| 18578-19188 | Misc / Murderer tab UI | Spinbot, hitbox expander, avoid murderer, fling, knife aura, Throw Knife button toggle. |
+| 19189-20232 | Settings tab UI | Auto execute, auto save/load config, mobile button theme, WindUI themes, background URL, config file manager. |
+| 20233-21003 | Background loops & cleanup | Connection cleanup, infinite jump setup. |
+| 21004-21021 | Welcome notification | Fires once initialization is complete. |
 
 ## Removed in OSS Release
 

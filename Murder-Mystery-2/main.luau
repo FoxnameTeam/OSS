@@ -3136,24 +3136,55 @@ Hub.CoinFarm.IndexMap = function()
 	return true
 end
 
+Hub.CoinFarm.GetMurdererPositions = function()
+	local positions = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= localPlayer then
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if humanoid and humanoid.Health > 0 and root then
+				local hasKnife = character:FindFirstChild("Knife") ~= nil or character:FindFirstChild("ZombieKnife") ~= nil or character:FindFirstChild("Claws") ~= nil
+				if not hasKnife then
+					local backpack = player:FindFirstChildOfClass("Backpack")
+					hasKnife = backpack and (backpack:FindFirstChild("Knife") ~= nil or backpack:FindFirstChild("ZombieKnife") ~= nil or backpack:FindFirstChild("Claws") ~= nil)
+				end
+				local role = Hub.CoinFarm.GetCachedRole(player)
+				if hasKnife or role == "Murderer" or role == "Zombie" then
+					table.insert(positions, root.Position)
+				end
+			end
+		end
+	end
+	return positions
+end
+
 Hub.CoinFarm.GetCompetitorPlayers = function()
 	local competitors = {}
 	local roleCache = Hub.RoleState.cache
+	local hasRoleCache = type(roleCache) == "table" and next(roleCache) ~= nil
+
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= localPlayer then
-			local roleEntry = type(roleCache) == "table" and (roleCache[p.Name] or roleCache[tostring(p.UserId)] or roleCache[p.UserId])
+			local roleEntry = hasRoleCache and (roleCache[p.Name] or roleCache[tostring(p.UserId)] or roleCache[p.UserId])
 			local isDead = type(roleEntry) == "table" and roleEntry.Dead == true
-			if not isDead then
+			local isMurderer = type(roleEntry) == "table" and (roleEntry.Role == "Murderer" or roleEntry.Role == "Zombie")
+
+			if not isDead and not isMurderer then
 				local char = p.Character
 				local root = char and char:FindFirstChild("HumanoidRootPart")
 				local hum = char and char:FindFirstChildOfClass("Humanoid")
 				if root and hum and hum.Health > 0 and char:IsDescendantOf(workspace) then
-					local vel = root.AssemblyLinearVelocity or root.Velocity or Vector3.zero
-					table.insert(competitors, {
-						pos = root.Position,
-						vel = vel,
-						speed = Vector3.new(vel.X, 0, vel.Z).Magnitude,
-					})
+					local hasKnife = not hasRoleCache and (char:FindFirstChild("Knife") ~= nil or char:FindFirstChild("ZombieKnife") ~= nil or char:FindFirstChild("Claws") ~= nil)
+					if not hasKnife then
+						local vel = root.AssemblyLinearVelocity or root.Velocity or Vector3.zero
+						local horizVel = Vector3.new(vel.X, 0, vel.Z)
+						table.insert(competitors, {
+							pos = root.Position,
+							vel = vel,
+							speed = horizVel.Magnitude,
+						})
+					end
 				end
 			end
 		end
@@ -3162,8 +3193,17 @@ Hub.CoinFarm.GetCompetitorPlayers = function()
 end
 
 Hub.CoinFarm.IsCoinContested = function(cPos, myDist, competitors, murdererPos, mySpeed)
-	if murdererPos and (cPos - murdererPos).Magnitude <= (Hub.CoinFarm.murdererNearRange or 30) then
-		return true
+	if typeof(murdererPos) == "Vector3" then
+		if (cPos - murdererPos).Magnitude <= (Hub.CoinFarm.murdererNearRange or 30) then
+			return true
+		end
+	elseif type(murdererPos) == "table" then
+		local nearRange = Hub.CoinFarm.murdererNearRange or 30
+		for _, mPos in ipairs(murdererPos) do
+			if typeof(mPos) == "Vector3" and (cPos - mPos).Magnitude <= nearRange then
+				return true
+			end
+		end
 	end
 
 	if not competitors or #competitors == 0 then
@@ -3171,32 +3211,48 @@ Hub.CoinFarm.IsCoinContested = function(cPos, myDist, competitors, murdererPos, 
 	end
 
 	mySpeed = math.max(1, tonumber(mySpeed) or tonumber(Hub.CoinFarm.speed) or 28)
+	local tMe = myDist / mySpeed
 
 	for _, comp in ipairs(competitors) do
 		local oPos = comp.pos
 		local yDiff = math.abs(cPos.Y - oPos.Y)
-		if yDiff <= 10 then
+		if yDiff <= 6.5 then
 			local oDist = (cPos - oPos).Magnitude
 
-			if oDist <= 4.0 and myDist > 4.0 then
+			if oDist <= 3.5 and myDist > 3.5 then
 				return true
 			end
 
-			if oDist < myDist and oDist <= 25 then
-				if comp.speed > 2 then
-					local dirX = cPos.X - oPos.X
-					local dirZ = cPos.Z - oPos.Z
+			local compSpeed = comp.speed or 0
+			if compSpeed > 1.5 then
+				local dirX = cPos.X - oPos.X
+				local dirZ = cPos.Z - oPos.Z
+				local horizDist = math.sqrt(dirX * dirX + dirZ * dirZ)
+
+				if horizDist > 0.01 then
 					local dot = comp.vel.X * dirX + comp.vel.Z * dirZ
 					if dot > 0 then
-						local tMe = myDist / mySpeed
-						local tOther = oDist / math.max(comp.speed, 16)
-						if tOther <= tMe + 0.15 then
-							return true
+						local vApproach = dot / horizDist
+						local cosTheta = vApproach / compSpeed
+						local tClosest = dot / (compSpeed * compSpeed)
+						local missDistSq = math.max(0, (horizDist * horizDist) - (tClosest * compSpeed) * (tClosest * compSpeed))
+						local missDist = math.sqrt(missDistSq)
+
+						if missDist <= 4.0 then
+							local tOther = tClosest
+							if tOther <= tMe + 0.15 then
+								return true
+							end
+						elseif horizDist <= 20 and cosTheta >= 0.6 then
+							local tOther = (horizDist / math.max(compSpeed, 16)) + 0.35
+							if tOther <= tMe + 0.15 then
+								return true
+							end
 						end
 					end
-				elseif oDist <= 5.0 then
-					return true
 				end
+			elseif oDist <= 5.0 and oDist < myDist then
+				return true
 			end
 		end
 	end
@@ -3320,12 +3376,11 @@ Hub.CoinFarm.GetNearestCoin = function(arg, k, playerUserId)
 	end
 
 	local competitors = Hub.CoinFarm.GetCompetitorPlayers()
-	local murdererRoot = Hub.CoinFarm.GetMurdererRoot(argPos)
-	local murdererPos = murdererRoot and murdererRoot.Position
+	local murdererPositions = Hub.CoinFarm.GetMurdererPositions()
 	local mySpeed = Hub.CoinFarm.speed or 28
 
 	for _, cand in ipairs(candidates) do
-		if not Hub.CoinFarm.IsCoinContested(cand.coin.Position, cand.dist, competitors, murdererPos, mySpeed) then
+		if not Hub.CoinFarm.IsCoinContested(cand.coin.Position, cand.dist, competitors, murdererPositions, mySpeed) then
 			return cand.coin
 		end
 	end
@@ -4330,12 +4385,16 @@ Hub.CoinFarm.PrecalculateNextCoin = function(fromPartOrPos, excludeCoin)
 	end
 
 	local competitors = Hub.CoinFarm.GetCompetitorPlayers()
-	local murdererRoot = Hub.CoinFarm.GetMurdererRoot(pos)
-	local murdererPos = murdererRoot and murdererRoot.Position
+	local murdererPositions = Hub.CoinFarm.GetMurdererPositions()
 	local mySpeed = Hub.CoinFarm.speed or 28
 
+	local char = localPlayer and localPlayer.Character
+	local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+	local distToCurrent = (myRoot and (myRoot.Position - pos).Magnitude) or 0
+
 	for _, cand in ipairs(candidates) do
-		if not Hub.CoinFarm.IsCoinContested(cand.coin.Position, cand.dist, competitors, murdererPos, mySpeed) then
+		local totalDist = cand.dist + distToCurrent
+		if not Hub.CoinFarm.IsCoinContested(cand.coin.Position, totalDist, competitors, murdererPositions, mySpeed) then
 			return cand.coin
 		end
 	end

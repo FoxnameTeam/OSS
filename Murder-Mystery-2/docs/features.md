@@ -10,38 +10,38 @@ Reference for all in-game options per tab.
 | Copy Discord Invite / Refresh Info | Copies community invite link and refreshes stats. |
 | Executor & Feature Support | Diagnostic table displaying which executor environment APIs are supported. |
 
-## Visuals (14352-15243)
+## Visuals (14411-15302)
 
 | Option | Line | Notes |
 | --- | --- | --- |
-| Player ESP & ESP Style | 14352+ | Highlights character models by match role (Innocent, Sheriff, Murderer, Zombie). |
+| Player ESP & ESP Style | 14411+ | Highlights character models by match role (Innocent, Sheriff, Murderer, Zombie). |
 | Line ESP, Nametag ESP, 360 ESP | | Tracers, player name tags with distance, screen-edge indicators. |
 | Gun ESP, Dropped Gun Notify | | Highlights dropped Sheriff gun and sends UI notifications. |
 | Bullet Tracer | | Colored tracers with custom duration. |
-| Coin ESP | 14433 | Highlight outline for spawned coins (`ESP_Coin`). |
-| XRay | 14456 | Makes obstruction parts semi-transparent (`xrayTransparency = 0.72`). Includes mobile button. |
-| Shaders & Atmosphere | 15106+ | Shader presets, specular scale, skybox, snowflake density, and fog density. |
+| Coin ESP | 14492 | Highlight outline for spawned coins (`ESP_Coin`). |
+| XRay | 14515 | Makes obstruction parts semi-transparent (`xrayTransparency = 0.72`). Includes mobile button. |
+| Shaders & Atmosphere | 15165+ | Shader presets, specular scale, skybox, snowflake density, and fog density. |
 
-## Crosshair (15244-15344)
+## Crosshair (15303-15403)
 
 Custom crosshair rendering with Lucide icon cursor support, size adjustment, and RGB color cycles.
 
-## Combat (15345-15595, 18519-19129)
+## Combat (15404-15654, 18578-19188)
 
-### Aim (15345+)
+### Aim (15404+)
 - **Aim Style**: Smooth camera tracking or silent aim metamethod interception.
 - **Controls**: FOV circle slider, wall check toggle, role constraint ("Only Aim While Sheriff"), prediction factor.
 - **Mobile Action**: Dedicated Aimlock touch button with draggable positioning.
 
-### Sheriff (15497+)
+### Sheriff (15556+)
 - Auto-shoot trigger with customizable target body part (Head/Torso).
 - On-screen touch button and keyboard keybind activation.
 
-### Murderer (18519+)
+### Murderer (18578+)
 - **Throw Knife Button**: On-screen action touch button with draggable positioning and direct toggle synchronization.
 - **Combat Aids**: Knife Aura, Hitbox Expander, and Kill All automation.
 
-## Player (16449-17350)
+## Player (16508-17409)
 
 | Option | Notes |
 | --- | --- |
@@ -54,13 +54,13 @@ Custom crosshair rendering with Lucide icon cursor support, size adjustment, and
 | Invisibility | Seat-based character offset technique. |
 | Jerk | Custom character motion simulation. |
 
-## Farm (15596-16448)
+## Farm (15655-16507)
 
 - **Progression**: Auto-prestige upon level requirement and automatic seasonal reward claiming.
 - **Coin Farm Core**:
   - **Movement Modes**: `Stop and Go` (settles for 0.3s after coin touch) and `Continuous` (touches in-flight within 4 studs and immediately transitions to next coin without stopping).
   - **Targeting Methods**:
-    - `Advanced method`: Precise 3D pathfinding evaluating all map coins sorted by distance. Checks competitor movement velocity, horizontal approach direction, and arrival time comparisons against local player speed. Rejects coins in different vertical floors (height > 10 studs), coins in competitor touch range, and coins inside murderer danger radius (<= 30 studs). Guaranteed to pick the closest uncontested coin, or closest coin if all are contested.
+    - `Advanced method`: Precise 3D trajectory pathfinding evaluating all map coins sorted by distance. Excludes non-collectors (Murderer, Zombies, dead players) and projects competitor velocities to compute point of closest approach (PCA) and intercept times against local player speed. Rejects coins on different vertical floors (`yDiff > 6.5` studs), coins in competitor touch range, and coins within danger radius (`<= 30` studs) of any active murderer/zombie. Precalculates continuous next coins factoring remaining path travel distance. Guaranteed to select the closest uncontested coin, or closest overall coin if all are contested.
     - `Simple method`: Top-K candidate pool with deterministic per-player `UserId` distribution or random selection for multi-bot environments.
   - **Lobby Coin Farm**: Teleports from lobby to coins and immediately returns after collection while respecting bag-full, XP farm, and murderer safety.
   - **End Round Modes**: `Normal (shooting)`, `Shoot only if Gun Dropped`, `Fling Murderer`, `Fling All`.
@@ -69,15 +69,15 @@ Custom crosshair rendering with Lucide icon cursor support, size adjustment, and
 - **Server Hopping**: Low player count hopping, anti-bot hop, and timer-based hopping with configurable intervals.
 - **Event Boxes**: Automatic crate and box purchasing by currency.
 
-## Anims (13706-14146)
+## Anims (13765-14205)
 
 Emote wheel synchronization, emote playback speed controls, item synchronization, instant dropped gun retrieval, and wall glitch helper.
 
-## Radio (14147-14351)
+## Radio (14206-14410)
 
 Custom audio ID player with local volume settings and FilteringEnabled replication via game sound remotes.
 
-## Teleports (18186-18518)
+## Teleports (18245-18577)
 
 | Option | Notes |
 | --- | --- |
@@ -86,7 +86,7 @@ Custom audio ID player with local volume settings and FilteringEnabled replicati
 | Auto Map Vote | Background polling cycle that detects active lobby voting across seasonal lobby maps (Normal, Summer, Halloween, Christmas, Easter), teleports to the designated board, tracks vote confirmation, and resets character to loop vote casting. |
 | Voting Board Selector | Dropdown selecting active voting pad target (`Board 1`, `Board 2`, or `Board 3`). |
 
-## Settings (19130-20173)
+## Settings (19189-20232)
 
 - **Auto Execute**: Toggles automatic script re-execution upon server hops via `queue_on_teleport`.
 - **Auto Load Config**: Automatically loads designated profile on script startup.
