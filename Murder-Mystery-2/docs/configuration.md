@@ -23,7 +23,7 @@ Every saved option has a unique `Flag` string (for example `ESP_Coin`, `Farm_Tar
 | `Settings_MobileButtonAccent` | Settings | Custom accent color for on-screen action buttons. |
 | `Visuals_Fog` | Visuals | Toggles custom environmental fog density and color. |
 
-## Configs (Settings tab, lines 19270-20359)
+## Configs (Settings tab, lines 20642-21778)
 
 | Action | Notes |
 | --- | --- |

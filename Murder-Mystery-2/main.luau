@@ -1,7 +1,3 @@
---[[
-    Foxname - Murder Mystery 2
-    Maintained and secured by the Foxname Team.
---]]
 task.defer(function()
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification", {
@@ -57,15 +53,167 @@ FoxnameKickPlayer = function(arg, arg2)
 end
 
 local hookSupported, silentAimSupported, foxnameMM2Runtime, sessionId, isTerminated, WindUI, Window, isOwner
+local isXenoExecutor = false
 local Tabs = nil
 local runService = game:GetService("RunService")
-local frameDeadline = os.clock() + 0.006
+local frameDeadline = os.clock() + 0.004
 local function budgetYield()
 	if os.clock() >= frameDeadline then
 		runService.Heartbeat:Wait()
-		frameDeadline = os.clock() + 0.006
+		frameDeadline = os.clock() + 0.004
 	end
 end
+
+local function resolveIdentityFuncs()
+	local getId = getthreadidentity or getidentity or getthreadcontext or get_thread_identity
+	local setId = setthreadidentity or setidentity or setthreadcontext or set_thread_identity
+	return getId, setId
+end
+
+local function runAtGameIdentity(fn, ...)
+	if type(fn) ~= "function" or isXenoExecutor then
+		return false
+	end
+	local getId, setId = resolveIdentityFuncs()
+	if type(getId) ~= "function" then
+		return false
+	end
+	local okOld, oldId = pcall(getId)
+	if not okOld or oldId == nil then
+		return false
+	end
+	local oldNum = tonumber(oldId)
+	if oldNum ~= 2 then
+		if type(setId) ~= "function" then
+			return false
+		end
+		local setOk = pcall(setId, 2)
+		local checkOk, curId = pcall(getId)
+		if not setOk or not checkOk or tonumber(curId) ~= 2 then
+			pcall(setId, oldId)
+			return false
+		end
+	end
+	local ok, res = pcall(fn, ...)
+	if oldNum ~= 2 and type(setId) == "function" then
+		pcall(setId, oldId)
+	end
+	return ok, res
+end
+
+local function canRequireAtGameIdentity()
+	local ok, res = runAtGameIdentity(function()
+		return true
+	end)
+	return ok and res == true
+end
+
+local function isGameUIReady()
+	local ok, players = pcall(game.GetService, game, "Players")
+	local lp = ok and players and players.LocalPlayer
+	local pg = lp and lp:FindFirstChildOfClass("PlayerGui")
+	local mainGui = pg and pg:FindFirstChild("MainGUI")
+	if not mainGui then
+		return false
+	end
+	return mainGui:FindFirstChild("Game") ~= nil or mainGui:FindFirstChild("Lobby") ~= nil
+end
+
+local function waitForGameUIReady(timeout)
+	local deadline = os.clock() + (tonumber(timeout) or 6)
+	while (not foxnameMM2Runtime or foxnameMM2Runtime.alive) and not isTerminated do
+		if isGameUIReady() then
+			return true
+		end
+		if os.clock() >= deadline then
+			return false
+		end
+		task.wait(0.2)
+	end
+	return false
+end
+
+local function fireConnectionsSafely(btn, signals)
+	if type(firesignal) == "function" then
+		local fired = false
+		for _, sig in ipairs(signals) do
+			if sig and pcall(firesignal, sig) then
+				fired = true
+			end
+		end
+		if fired then
+			return true
+		end
+	end
+
+	if type(getconnections) == "function" then
+		local fired = false
+		local allowClosure = canRequireAtGameIdentity()
+		for _, sig in ipairs(signals) do
+			if sig then
+				local okList, cons = pcall(getconnections, sig)
+				if okList and type(cons) == "table" then
+					for _, con in ipairs(cons) do
+						if con.Enabled ~= false then
+							if type(con.Fire) == "function" then
+								local ok = pcall(con.Fire, con)
+								fired = fired or ok
+							elseif allowClosure and type(con.Function) == "function" then
+								local ok = runAtGameIdentity(con.Function)
+								fired = fired or ok
+							end
+						end
+					end
+				end
+			end
+		end
+		if fired then
+			return true
+		end
+	end
+
+	if btn and btn:IsA("GuiButton") then
+		local okSize, absPos, absSize = pcall(function()
+			return btn.AbsolutePosition, btn.AbsoluteSize
+		end)
+		if okSize and absSize and absSize.X > 0 and absSize.Y > 0 then
+			local center = absPos + absSize / 2
+			if type(mousemoveabs) == "function" and type(mouse1click) == "function" then
+				if pcall(function()
+					mousemoveabs(center.X, center.Y)
+					mouse1click()
+				end) then
+					return true
+				end
+			end
+			local okVim, vim = pcall(game.GetService, game, "VirtualInputManager")
+			if okVim and vim then
+				return pcall(function()
+					vim:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
+					vim:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+				end)
+			end
+		end
+	end
+
+	return false
+end
+
+local function safeRequire(mod)
+	if not mod then
+		return nil
+	end
+	local reqFn = (type(getrenv) == "function" and type(getrenv().require) == "function" and getrenv().require) or require
+	if type(reqFn) ~= "function" then
+		return nil
+	end
+	local ok, res = runAtGameIdentity(reqFn, mod)
+	if ok then
+		return res
+	end
+	return nil
+end
+genv.safeRequire = safeRequire
 
 do
 	local tbl2 = { Name = "Unknown executor", IsXeno = false, IsDelta = false }
@@ -78,6 +226,7 @@ do
 
 	local v8 = string.lower(tbl2.Name)
 	tbl2.IsXeno = v8:find("xeno", 1, true) ~= nil
+	isXenoExecutor = tbl2.IsXeno
 	tbl2.IsDelta = v8:find("delta", 1, true) ~= nil
 
 	local function fn6()
@@ -113,11 +262,22 @@ do
 	foxnameMM2Runtime.sessionId = sessionId
 	local HttpService = game:GetService("HttpService")
 
-	if type(request) == "function" then
-		request_ = request
-	elseif type(http_request) == "function" then
-		request_ = http_request
+	local function resolveHttpRequest()
+		if type(request) == "function" then
+			return request
+		elseif type(http_request) == "function" then
+			return http_request
+		elseif type(syn) == "table" and type(syn.request) == "function" then
+			return syn.request
+		elseif type(http) == "table" and type(http.request) == "function" then
+			return http.request
+		elseif type(fluxus) == "table" and type(fluxus.request) == "function" then
+			return fluxus.request
+		end
+		return nil
 	end
+
+	request_ = resolveHttpRequest()
 
 	local function fn17()
 		local str2 = "Unknown executor"
@@ -133,7 +293,7 @@ do
 			end
 		end)
 
-		local flag6 = type(request) == "function" or type(http_request) == "function"
+		local flag6 = resolveHttpRequest() ~= nil
 		local websocket_ = type(WebSocket) == "table" and WebSocket
 		local flag7 = type(websocket_) == "table"
 
@@ -303,42 +463,23 @@ do
 					return false
 				end
 
-				if type(getconnections) ~= "function" then
-					return fn19(arg)
-				end
-				local ok, result = pcall(getconnections, arg.MouseButton1Click)
-				if not ok or type(result) ~= "table" then
-					return fn19(arg)
-				end
-
-				for _, v11 in ipairs(result) do
-					if v11.Enabled ~= false and type(v11.Function) == "function" then
-						local function_ = v11.Function
-
-						task.spawn(function()
-							local v12 = getthreadidentity or getidentity
-							local v13 = setthreadidentity or setidentity
-							local v14 = nil
-
-							if type(v12) == "function" then
-								pcall(function()
-									v14 = v12()
+				if canRequireAtGameIdentity() and type(getconnections) == "function" then
+					local ok, result = pcall(getconnections, arg.MouseButton1Click)
+					if ok and type(result) == "table" then
+						for _, con in ipairs(result) do
+							if con.Enabled ~= false and type(con.Function) == "function" then
+								local fn = con.Function
+								task.spawn(function()
+									runAtGameIdentity(fn)
 								end)
+								return true
 							end
-
-							if type(v13) == "function" then
-								pcall(v13, 2)
-							end
-
-							pcall(function_)
-
-							if v14 and type(v13) == "function" then
-								pcall(v13, v14)
-							end
-						end)
-
-						return true
+						end
 					end
+				end
+
+				if type(firesignal) == "function" and pcall(firesignal, arg.MouseButton1Click) then
+					return true
 				end
 
 				return fn19(arg)
@@ -484,15 +625,7 @@ do
 			end
 		end)
 
-		local request_2
-
-		if typeof(request) == "function" then
-			request_2 = request
-		elseif typeof(http_request) == "function" then
-			request_2 = http_request
-		else
-			request_2 = nil
-		end
+		local request_2 = resolveHttpRequest()
 
 		local urls = {
 			"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
@@ -536,59 +669,183 @@ do
 		end
 
 		local function patchWindUI(src)
-			if string.find(src, "--[Foxname WindUI Patched]--", 1, true) then
+			if src:find("--[[FN_WUI_PATCH_V5]]", 1, true) then
 				return src
 			end
 
 			local str2 = src:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
 			str2 = str2:gsub("d=ak%.AddSignal%(ar%.UIElements%.ContainerFrame%.ChildAdded,%s*function%(%)%s*b%.Visible=false%s*d:Disconnect%(%)%s*end%)", "d=ak.AddSignal(ar.UIElements.ContainerFrame.ChildAdded,function(c) if c~=b and c.ClassName~='UIListLayout' and c.ClassName~='UIPadding' then b.Visible=false b.Size=UDim2.new(1,0,0,0) if d then d:Disconnect() end end end)\nif #ar.Elements>0 or #ar.UIElements.ContainerFrame:GetChildren()>3 then b.Visible=false b.Size=UDim2.new(1,0,0,0) end")
 
-			-- 1. Window Open layout solver isolation
+			str2 = str2:gsub("function ([%w_]+)%.AddFontObject%(([%w_]+)%)\ntable%.insert%(%1%.FontObjects,%2%)\n%1%.UpdateFont%(%1%.Font%)\nend", function(mObj, pArg)
+				return "function " .. mObj .. ".AddFontObject(" .. pArg .. ")\ntable.insert(" .. mObj .. ".FontObjects," .. pArg .. ")\nif " .. mObj .. ".Font then\n" .. pArg .. ".FontFace=Font.new(" .. mObj .. ".Font," .. pArg .. ".FontFace.Weight," .. pArg .. ".FontFace.Style)\nend\nend"
+			end, 1)
+
+			str2 = replaceExact(str2, "b.AddSignal(r:GetPropertyChangedSignal\"AbsoluteSize\",function()\nlocal u=GetShape(m.Type)\nif u.AutoChange==false then\nreturn\nend", "b.AddSignal(r:GetPropertyChangedSignal\"AbsoluteSize\",function()\nif r:GetAttribute(\"_fnPauseShape\") then\nreturn\nend\nif r.AbsoluteSize.X<=1 or r.AbsoluteSize.Y<=1 then\nreturn\nend\nlocal u=GetShape(m.Type)\nif u.AutoChange==false then\nreturn\nend")
 			str2 = replaceExact(str2, "ao(\"Frame\",{\nSize=UDim2.new(1,0,1,0),\nBackgroundTransparency=1,\nName=\"Main\",\n\nVisible=false,\nZIndex=97,\n},{\nao(\"UICorner\",{\nCornerRadius=UDim.new(0,aw.UICorner),\n}),", "ao(\"Frame\",{\nSize=UDim2.new(1,0,1,0),\nBackgroundTransparency=1,\nName=\"Main\",\nClipsDescendants=true,\n\nVisible=false,\nZIndex=97,\n},{\nao(\"UICorner\",{\nCornerRadius=UDim.new(0,aw.UICorner),\n}),")
-			str2 = replaceExact(str2, "aw.UIElements.Main.Size=UDim2.new(aw.Size.X.Scale,aw.Size.X.Offset,0,100)\n\nap(aw.UIElements.Main,0.8,{\n\nSize=aw.Size,\n},Enum.EasingStyle.Quint,Enum.EasingDirection.Out):Play()", "aw.UIElements.Main.Size=UDim2.new(aw.Size.X.Scale,aw.Size.X.Offset,0,100)\nlocal _origMB=aw._origMainBarSize or (aw.UIElements.MainBar and aw.UIElements.MainBar.Size)\nlocal _origSB=aw._origSideBarSize or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.Size)\naw._origMainBarSize=_origMB\naw._origSideBarSize=_origSB\nlocal _openFinalH=aw.Size.Y.Offset\nlocal _sbW=aw.SideBarWidth or (_origSB and _origSB.X.Offset>0 and _origSB.X.Offset) or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.AbsoluteSize.X) or 200\nif aw.UIElements.MainBar and aw.UIElements.SideBarContainer and _origMB and _origSB then\naw.UIElements.MainBar.Size=UDim2.new(1,-_sbW,0,_openFinalH-aw.Topbar.Height)\naw.UIElements.SideBarContainer.Size=UDim2.new(0,_sbW,0,_origSB.Y.Offset+_origSB.Y.Scale*_openFinalH)\ntask.delay(0.82,function()\nif aw.UIElements and aw.UIElements.MainBar and aw.UIElements.SideBarContainer then\naw.UIElements.MainBar.Size=_origMB\naw.UIElements.SideBarContainer.Size=_origSB\nend\nend)\nend\nap(aw.UIElements.Main,0.8,{\n\nSize=aw.Size,\n},Enum.EasingStyle.Quint,Enum.EasingDirection.Out):Play()")
 
-			-- 2. Hover shine listener leak fix
+			local openStart, openEnd, openArg = str2:find("function aw%.Open%(([%w_]+)%)\nif aw%.Destroyed then\nreturn\nend.-av%.WindUI:ToggleAcrylic%(true%)%s*\nend%)\nend")
+			if openStart then
+				local openBody = str2:sub(openStart, openEnd)
+				local twFn = openBody:match("([%w_]+)%(aw%.UIElements%.Main,0%.8") or "ap"
+				local safeObj = openBody:match("([%w_]+)%.SafeCallback%(aw%.OnOpenCallback%)") or "an"
+				local wuiObj = openBody:match("([%w_]+)%.WindUI%.TransparencyValue") or "av"
+				local bgImg = openBody:match("if ([%w_]+) then\nif [%w_]+:IsA\"VideoFrame\"") or "i"
+				local shadowImg = openBody:match("([%w_]+),\n0%.25,\n{ImageTransparency=aw%.ShadowTransparency}") or "b"
+				local dragBar = openBody:match("([%w_]+),\n0%.45,\n{Size=UDim2%.new%(0,aw%.DragFrameSize,0,4%)") or "r"
+				local stateBool = openBody:match("([%w_]+):Set%(true%)") or "z"
+				local resizer = openBody:match("([%w_]+)%.ImageLabel,\n0%.45,\n{ImageTransparency=0%.8}") or "az"
+				local newOpen = table.concat({
+					"function aw.Open(" .. openArg .. ")",
+					"if aw.Destroyed then return end",
+					"aw._animGen=(aw._animGen or 0)+1",
+					"local _gen=aw._animGen",
+					"if aw._animTweens then for _,_tw in ipairs(aw._animTweens) do pcall(function() _tw:Cancel() end) end end",
+					"local _tws={}",
+					"aw._animTweens=_tws",
+					"task.spawn(function()",
+					"if aw.OnOpenCallback then task.spawn(function() " .. safeObj .. ".SafeCallback(aw.OnOpenCallback) end) end",
+					"task.wait(0.06)",
+					"if aw._animGen~=_gen or aw.Destroyed then return end",
+					"aw.Closed=false",
+					"local _main=aw.UIElements.Main",
+					"local _bg=_main and _main:FindFirstChild\"Background\"",
+					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",true) _bg.Size=UDim2.new(1,0,1,0) end",
+					"_main.Size=UDim2.new(aw.Size.X.Scale,aw.Size.X.Offset,0,100)",
+					"local _origMB=aw._origMainBarSize or (aw.UIElements.MainBar and aw.UIElements.MainBar.Size)",
+					"local _origSB=aw._origSideBarSize or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.Size)",
+					"aw._origMainBarSize=_origMB",
+					"aw._origSideBarSize=_origSB",
+					"local _openFinalH=aw.Size.Y.Offset",
+					"local _sbW=aw.SideBarWidth or (_origSB and _origSB.X.Offset>0 and _origSB.X.Offset) or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.AbsoluteSize.X) or 200",
+					"if aw.UIElements.MainBar and aw.UIElements.SideBarContainer and _origMB and _origSB then",
+					"aw.UIElements.MainBar.Size=UDim2.new(1,-_sbW,0,_openFinalH-aw.Topbar.Height)",
+					"aw.UIElements.SideBarContainer.Size=UDim2.new(0,_sbW,0,_origSB.Y.Offset+_origSB.Y.Scale*_openFinalH)",
+					"end",
+					"local _tOpen=" .. twFn .. "(_main,0.8,{Size=aw.Size},Enum.EasingStyle.Quint,Enum.EasingDirection.Out)",
+					"table.insert(_tws,_tOpen)",
+					"_tOpen:Play()",
+					"_tOpen.Completed:Connect(function()",
+					"if aw._animGen~=_gen or aw.Closed or aw.Destroyed then return end",
+					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",nil) end",
+					"if aw.UIElements and aw.UIElements.MainBar and aw.UIElements.SideBarContainer and _origMB and _origSB then",
+					"aw.UIElements.MainBar.Size=_origMB",
+					"aw.UIElements.SideBarContainer.Size=_origSB",
+					"end",
+					"end)",
+					"if aw.UIElements.BackgroundGradient then local _tG=" .. twFn .. "(aw.UIElements.BackgroundGradient,0.2,{ImageTransparency=0},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tG) _tG:Play() end",
+					"if _bg then _bg.ImageTransparency=1 local _tB=" .. twFn .. "(_bg,0.4,{ImageTransparency=aw.Transparent and " .. wuiObj .. ".WindUI.TransparencyValue or 0},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(_tws,_tB) _tB:Play() end",
+					"if " .. bgImg .. " then if " .. bgImg .. ":IsA\"VideoFrame\" then " .. bgImg .. ".Visible=true else local _tL=" .. twFn .. "(" .. bgImg .. ",0.2,{ImageTransparency=aw.BackgroundImageTransparency},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tL) _tL:Play() end end",
+					"if aw.OpenButtonMain and aw.IsOpenButtonEnabled then aw.OpenButtonMain:Visible(false) end",
+					"if " .. shadowImg .. " then local _tD=" .. twFn .. "(" .. shadowImg .. ",0.25,{ImageTransparency=aw.ShadowTransparency},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tD) _tD:Play() end",
+					"if " .. dragBar .. " then local _tU=" .. twFn .. "(" .. dragBar .. ",0.45,{Size=UDim2.new(0,aw.DragFrameSize,0,4),ImageTransparency=0.8},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(_tws,_tU) _tU:Play() end",
+					stateBool .. ":Set(true)",
+					"if aw.Resizable and " .. resizer .. " and " .. resizer .. ".ImageLabel then local _tAz=" .. twFn .. "(" .. resizer .. ".ImageLabel,0.45,{ImageTransparency=0.8},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(_tws,_tAz) _tAz:Play() aw.CanResize=true end",
+					"aw.CanDropdown=true",
+					"_main.Visible=true",
+					"local _inner=_main:WaitForChild\"Main\"",
+					"if _inner then _inner.Visible=true end",
+					wuiObj .. ".WindUI:ToggleAcrylic(true)",
+					"end)",
+					"end",
+				}, "\n")
+				str2 = str2:sub(1, openStart - 1) .. newOpen .. str2:sub(openEnd + 1)
+			end
+
+			local closeStart, closeEnd, closeArg, closeRet = str2:find("function aw%.Close%(([%w_]+)%)\nif aw%.Destroyed then\nreturn\nend\n\nlocal ([%w_]+)={}.-aw%.OpenButtonMain:Visible%(true%)\nend\nend%)")
+			if closeStart then
+				local closeBody = str2:sub(closeStart, closeEnd)
+				local twFn = closeBody:match("([%w_]+)%(aw%.UIElements%.Main,0%.9") or "ap"
+				local safeObj = closeBody:match("([%w_]+)%.SafeCallback%(aw%.OnCloseCallback%)") or "an"
+				local wuiObj = closeBody:match("([%w_]+)%.WindUI:ToggleAcrylic") or "av"
+				local bgImg = closeBody:match("if ([%w_]+) then\nif [%w_]+:IsA\"VideoFrame\"") or "i"
+				local shadowImg = closeBody:match(twFn .. "%(([%w_]+),0%.25,{ImageTransparency=1}") or "b"
+				local dragBar = closeBody:match(twFn .. "%(%s*([%w_]+),\n0%.3,\n{Size=UDim2%.new%(0,0,0,4%),ImageTransparency=1}") or "r"
+				local resizer = closeBody:match(twFn .. "%(%s*([%w_]+)%.ImageLabel,\n0%.3") or "az"
+				local stateBool = closeBody:match("([%w_]+):Set%(false%)") or "z"
+				local newClose = table.concat({
+					"function aw.Close(" .. closeArg .. ")",
+					"if aw.Destroyed then return end",
+					"local " .. closeRet .. "={}",
+					"aw._animGen=(aw._animGen or 0)+1",
+					"local _gen=aw._animGen",
+					"if aw._animTweens then for _,_tw in ipairs(aw._animTweens) do pcall(function() _tw:Cancel() end) end end",
+					"local _tws={}",
+					"aw._animTweens=_tws",
+					"if aw.OnCloseCallback then task.spawn(function() " .. safeObj .. ".SafeCallback(aw.OnCloseCallback) end) end",
+					wuiObj .. ".WindUI:ToggleAcrylic(false)",
+					"aw.CanDropdown=false",
+					"aw.Closed=true",
+					stateBool .. ":Set(false)",
+					"aw.CanResize=false",
+					"local _main=aw.UIElements.Main",
+					"local _innerMain=_main and _main:FindFirstChild\"Main\"",
+					"if _innerMain then _innerMain.Visible=false end",
+					"local _bg=_main and _main:FindFirstChild\"Background\"",
+					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",true) end",
+					"local _tClose=nil",
+					"if " .. shadowImg .. " then local _tD=" .. twFn .. "(" .. shadowImg .. ",0.15,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tD) _tD:Play() _tClose=_tD end",
+					"if aw.UIElements.BackgroundGradient then local _tG=" .. twFn .. "(aw.UIElements.BackgroundGradient,0.16,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tG) _tG:Play() end",
+					"if _bg then local _tB=" .. twFn .. "(_bg,0.20,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tB) _tB:Play() _tClose=_tB end",
+					"if " .. bgImg .. " then if " .. bgImg .. ":IsA\"VideoFrame\" then " .. bgImg .. ".Visible=false else local _tL=" .. twFn .. "(" .. bgImg .. ",0.18,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tL) _tL:Play() end end",
+					"if " .. dragBar .. " then local _tU=" .. twFn .. "(" .. dragBar .. ",0.18,{Size=UDim2.new(0,0,0,4),ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tU) _tU:Play() end",
+					"if " .. resizer .. " and " .. resizer .. ".ImageLabel then local _tAz=" .. twFn .. "(" .. resizer .. ".ImageLabel,0.16,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tAz) _tAz:Play() end",
+					"local function _finishClose()",
+					"if aw._animGen~=_gen or not aw.Closed or aw.Destroyed then return end",
+					"if _main then _main.Visible=false _main.Size=aw.Size end",
+					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",nil) end",
+					"if aw.OpenButtonMain and not aw.Destroyed and not aw.IsPC and aw.IsOpenButtonEnabled then aw.OpenButtonMain:Visible(true) end",
+					"end",
+					"if _tClose then _tClose.Completed:Connect(_finishClose) else _finishClose() end",
+				}, "\n")
+				str2 = str2:sub(1, closeStart - 1) .. newClose .. str2:sub(closeEnd + 1)
+			end
+
 			str2 = replaceExact(str2, "if ah.Hover then\naa.AddSignal(d.MouseEnter,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\naa.AddSignal(d.MouseMoved,function(g,h)\naB.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\naA.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend", "if ah.Hover then\nlocal _shineConn\naa.AddSignal(d.MouseEnter,function()\nif am then\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\nif _shineConn then _shineConn:Disconnect() _shineConn=nil end\n_shineConn=aa.AddSignal(d.MouseMoved,function(g,h)\nlocal _dw=d.AbsoluteSize.X\nif _dw>0 then\nlocal _off=((g-d.AbsolutePosition.X)/_dw)-0.5\naB.HoverGradient.Offset=Vector2.new(_off,0)\naA.HoverGradient.Offset=Vector2.new(_off,0)\nend\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif _shineConn then _shineConn:Disconnect() _shineConn=nil end\nif am then\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend")
-
-			-- 3. Tab switch tween targeting
 			str2 = replaceExact(str2, "for ar,as in next,ao.Tabs do\nif not as.Locked then", "for ar,as in next,ao.Tabs do\nif as.Selected and ar~=aq and not as.Locked then")
-
-			-- 4. Tab content slide Position translation
 			str2 = replaceExact(str2, "task.spawn(function()\nfor ar,as in next,ao.Containers do\nas.AnchorPoint=Vector2.new(0,0.05)\nas.Visible=false\nend\nao.Containers[aq].Visible=true\nlocal ar=game:GetService\"TweenService\"\n\nlocal as=TweenInfo.new(0.15,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)\nlocal at=ar:Create(ao.Containers[aq],as,{\nAnchorPoint=Vector2.new(0,0),\n})\nat:Play()\nend)", "task.spawn(function()\nfor ar,as in next,ao.Containers do\nas.Position=UDim2.new(0,0,0,14)\nas.Visible=false\nend\nao.Containers[aq].Position=UDim2.new(0,0,0,14)\nao.Containers[aq].Visible=true\nlocal ar=game:GetService\"TweenService\"\n\nlocal as=TweenInfo.new(0.15,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)\nlocal at=ar:Create(ao.Containers[aq],as,{\nPosition=UDim2.new(0,0,0,0),\n})\nat:Play()\nend)")
-
-			-- 5. Toggle switch duplicate tween removal
 			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Toggle\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "-- dup glass tween removed")
 			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Text\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0.85},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "-- dup glass tween removed")
-
-			-- 6. Dropdown item selection tween storm reduction
 			str2 = replaceExact(str2, "else\nfor aB,b in next,ap.Tabs do\nam(b.UIElements.TabItem,0.1,{ImageTransparency=1}):Play()\n\nam(\nb.UIElements.TabItem.Frame.Title.TextLabel,\n0.1,\n{TextTransparency=0.4}\n):Play()\nif b.UIElements.TabIcon then\nam(b.UIElements.TabIcon.ImageLabel,0.1,{ImageTransparency=0.2}):Play()\nend\nb.Selected=false\nend\naz.Selected=true", "else\nfor aB,b in next,ap.Tabs do\nif b.Selected and b~=az then\nam(b.UIElements.TabItem,0.1,{ImageTransparency=1}):Play()\nam(\nb.UIElements.TabItem.Frame.Title.TextLabel,\n0.1,\n{TextTransparency=0.4}\n):Play()\nif b.UIElements.TabIcon then\nam(b.UIElements.TabIcon.ImageLabel,0.1,{ImageTransparency=0.2}):Play()\nend\nb.Selected=false\nend\nend\naz.Selected=true")
-
-			-- 7. Closed dropdown position update bypass
-			str2 = replaceExact(str2, "function UpdatePosition()\nlocal au=ap.UIElements.Dropdown or ap.DropdownFrame.UIElements.Main", "function UpdatePosition()\nif not ap.Opened and not (ap.UIElements.MenuCanvas and ap.UIElements.MenuCanvas.Visible) then return end\nlocal au=ap.UIElements.Dropdown or ap.DropdownFrame.UIElements.Main")
-
-			-- 8. Slider live dragging & click direct size update
+			str2 = str2:gsub("function UpdatePosition%(%)\nlocal ([%w_]+)=([%w_]+)%.UIElements%.Dropdown or ([%w_]+)%.DropdownFrame%.UIElements%.Main", function(v1, v2, v3)
+				return "function UpdatePosition()\nif not " .. v2 .. ".Opened and not (" .. v2 .. ".UIElements.MenuCanvas and " .. v2 .. ".UIElements.MenuCanvas.Visible) then return end\nlocal " .. v1 .. "=" .. v2 .. ".UIElements.Dropdown or " .. v3 .. ".DropdownFrame.UIElements.Main"
+			end, 1)
 			str2 = replaceExact(str2, "if aA~=aq then\nag(al.UIElements.SliderIcon.Frame,0.05,{Size=UDim2.new(d,0,1,0)}):Play()", "if aA~=aq then\nal.UIElements.SliderIcon.Frame.Size=UDim2.new(d,0,1,0)")
 			str2 = replaceExact(str2, "if aA~=aq then\nag(al.UIElements.SliderIcon.Frame,0.05,{Size=UDim2.new(g,0,1,0)}):Play()", "if aA~=aq then\nal.UIElements.SliderIcon.Frame.Size=UDim2.new(g,0,1,0)")
 
-			return "--[Foxname WindUI Patched]--\n" .. str2
+			str2 = str2:gsub("for ([%w_]+),([%w_]+) in next,%(([%w_]+)%.__elements or{}%)do\nif ([%w_]+)%.Elements%[%1%]and ([%w_]+)%.Parser%[%2%.__type%]then\ntask%.spawn%(function%(%)\n%5%.Parser%[%2%.__type%]%.Load%(%4%.Elements%[%1%],%2%)\nend%)\nend\nend", function(kVar, vVar, dataVar, cfgVar, mgrVar)
+				return "task.spawn(function()\nlocal _rs=game:GetService\"RunService\"\nlocal _t0=os.clock()\nfor " .. kVar .. "," .. vVar .. " in next,(" .. dataVar .. ".__elements or{})do\nif " .. cfgVar .. ".Elements[" .. kVar .. "]and " .. mgrVar .. ".Parser[" .. vVar .. ".__type]then\npcall(" .. mgrVar .. ".Parser[" .. vVar .. ".__type].Load," .. cfgVar .. ".Elements[" .. kVar .. "]," .. vVar .. ")\nif os.clock()-_t0>=0.004 then\n_rs.Heartbeat:Wait()\n_t0=os.clock()\nend\nend\nend\nend)"
+			end, 1)
+
+			return "--[[FN_WUI_PATCH_V5]]\n" .. str2
 		end
 
 		local function compileSource(src)
-			if typeof(src) ~= "string" or #src < 400 then
+			if typeof(src) ~= "string" or #src < 400 or type(loadstring) ~= "function" then
 				return nil
 			end
-			local str2 = patchWindUI(src)
-			local chunk, err = loadstring(str2)
-			if chunk then
-				return chunk, str2
+			local okPatch, str2 = pcall(patchWindUI, src)
+			if okPatch and type(str2) == "string" then
+				local okLoad, chunk = pcall(loadstring, str2)
+				if okLoad and type(chunk) == "function" then
+					return chunk, str2
+				end
+			end
+			local okRaw, rawChunk = pcall(loadstring, src)
+			if okRaw and type(rawChunk) == "function" then
+				return rawChunk, src
 			end
 			return nil
 		end
 
 		local chunk = nil
 		local cached = tryReadCache()
-		if cached then
-			chunk = compileSource(cached)
+		local stalePatchedCache = cached and (cached:find("--[Foxname WindUI Patched]--", 1, true) or cached:find("--[[FN_WUI_PATCH_V2]]", 1, true) or cached:find("--[[FN_WUI_PATCH_V3]]", 1, true) or cached:find("--[[FN_WUI_PATCH_V4]]", 1, true)) and not cached:find("--[[FN_WUI_PATCH_V5]]", 1, true)
+		if cached and not stalePatchedCache then
+			local compiledChunk, patchedSrc = compileSource(cached)
+			chunk = compiledChunk
+			if chunk and patchedSrc and patchedSrc ~= cached then
+				tryWriteCache(patchedSrc)
+			end
 		end
 
 		if not chunk then
@@ -634,6 +891,14 @@ do
 				if chunk then
 					break
 				end
+			end
+		end
+
+		if not chunk and cached then
+			local compiledChunk, patchedSrc = compileSource(cached)
+			chunk = compiledChunk
+			if chunk and patchedSrc and patchedSrc ~= cached then
+				tryWriteCache(patchedSrc)
 			end
 		end
 
@@ -900,19 +1165,10 @@ do
 	local function fn24(arg, arg2)
 		if arg then
 			local guild = arg.guild
-			local flag6 = type(guild.icon) == "string"
-
-			if flag6 then
-				local str5 = "/" .. guild.icon .. ".png?size=1024"
-				flag6 = "https://cdn.discordapp.com/icons/" .. tostring(guild.id) .. str5
-			end
-
-			local str5 = flag6 or "messages-square"
 
 			pcall(function()
 				v11:SetTitle(tostring(guild.name or "Foxname Community"))
 				v11:SetDesc("<font color=\"#22C55E\"><b>LIVE</b></font>  Foxname community server" .. "\nMembers: " .. tostring(arg.approximate_member_count or "?") .. "  |  Online: " .. tostring(arg.approximate_presence_count or "?") .. "\n<font color=\"#94A3B8\">discord.gg/" .. str2 .. "</font>")
-				v11:SetImage(str5, 42)
 			end)
 
 			if arg2 then
@@ -1000,7 +1256,7 @@ do
 		if v10.score >= 100 and not arg2 then
 			return true
 		end
-		local request_2 = type(request) == "function" and request or type(http_request) == "function" and http_request or nil
+		local request_2 = resolveHttpRequest()
 		if type(request_2) ~= "function" then
 			return false
 		end
@@ -1095,7 +1351,6 @@ do
 		end)
 	end)
 
-	-- script user communication and panel removed
 end
 
 local tbl2
@@ -1457,7 +1712,15 @@ Hub.Crosshair = {
 	suppressCursor = false,
 	cursorConnection = nil,
 	originalMouseIconEnabled = nil,
-	userGameSettings = (typeof(UserSettings) == "function" and pcall(UserSettings)) and UserSettings():GetService("UserGameSettings") or nil,
+	userGameSettings = (function()
+		if typeof(UserSettings) ~= "function" then
+			return nil
+		end
+		local ok, svc = pcall(function()
+			return UserSettings():GetService("UserGameSettings")
+		end)
+		return ok and svc or nil
+	end)(),
 	iconModule = nil,
 	iconLoading = false,
 	icons = {
@@ -1885,18 +2148,18 @@ Hub.AutoPrestige.GetData = function(arg)
 	end
 
 	if not Hub.AutoPrestige.profile then
-		local ok, profile = pcall(require, ReplicatedStorage.Modules.ProfileData)
+		local profile = safeRequire(ReplicatedStorage.Modules.ProfileData)
 
-		if ok and type(profile) == "table" then
+		if type(profile) == "table" then
 			Hub.AutoPrestige.profile = profile
 			Hub.AutoPrestige.profileRefreshedAt = now
 		end
 	end
 
 	if not Hub.AutoPrestige.levelModule then
-		local ok, levelModule = pcall(require, ReplicatedStorage.Modules.LevelModule)
+		local levelModule = safeRequire(ReplicatedStorage.Modules.LevelModule)
 
-		if ok and type(levelModule) == "table" then
+		if type(levelModule) == "table" then
 			Hub.AutoPrestige.levelModule = levelModule
 		end
 	end
@@ -1918,36 +2181,7 @@ Hub.AutoPrestige.FireButton = function(arg)
 	if not arg or not arg:IsA("GuiButton") then
 		return false
 	end
-
-	if type(firesignal) == "function" then
-		if pcall(function()
-			firesignal(arg.MouseButton1Click)
-		end) then
-			return true
-		end
-	end
-
-	if type(getconnections) == "function" then
-		local flag7 = false
-
-		for _, v8 in ipairs(getconnections(arg.MouseButton1Click)) do
-			local ok = pcall(function()
-				if type(v8.Fire) == "function" then
-					v8:Fire()
-				elseif type(v8.Function) == "function" then
-					v8.Function()
-				end
-			end)
-
-			flag7 = flag7 or ok
-		end
-
-		if flag7 then
-			return true
-		end
-	end
-
-	return false
+	return fireConnectionsSafely(arg, { arg.MouseButton1Click })
 end
 
 Hub.AutoPrestige.Request = function()
@@ -2121,40 +2355,7 @@ Hub.AutoClaimReward.FireButton = function(btn)
 	if not btn or not btn:IsA("GuiButton") then
 		return false
 	end
-
-	local fired = false
-
-	if type(firesignal) == "function" then
-		for _, sig in ipairs({ btn.Activated, btn.MouseButton1Click }) do
-			if sig and pcall(firesignal, sig) then
-				fired = true
-			end
-		end
-
-		if fired then
-			return true
-		end
-	end
-
-	if type(getconnections) == "function" then
-		for _, sig in ipairs({ btn.Activated, btn.MouseButton1Click }) do
-			if sig then
-				for _, con in ipairs(getconnections(sig)) do
-					local ok = pcall(function()
-						if type(con.Fire) == "function" then
-							con:Fire()
-						elseif type(con.Function) == "function" then
-							con.Function()
-						end
-					end)
-
-					fired = fired or ok
-				end
-			end
-		end
-	end
-
-	return fired
+	return fireConnectionsSafely(btn, { btn.Activated, btn.MouseButton1Click })
 end
 
 Hub.AutoClaimReward.Check = function()
@@ -2295,9 +2496,9 @@ Hub.CoinFarm.GetCurrentXP = function()
 		modules = modules and modules:FindFirstChild("ProfileData")
 
 		if modules then
-			local ok, profile2 = pcall(require, modules)
+			local profile2 = safeRequire(modules)
 
-			if ok and type(profile2) == "table" then
+			if type(profile2) == "table" then
 				Hub.AutoPrestige.profile = profile2
 				profile = profile2
 			end
@@ -2379,13 +2580,13 @@ Hub.CoinFarm.GetRoundTimeRemaining = function()
 		local num2 = tonumber(roundTimerPart:GetAttribute("RoundLength"))
 		if num2 and Hub.RoundState.startedAt > 0 then
 			local startedAt = Hub.RoundState.startedAt
-			return math.max(0, num2 - os.clock() - startedAt), "Estimated"
+			return math.max(0, num2 - (os.clock() - startedAt)), "Estimated"
 		end
 	end
 
 	if Hub.RoundState.startedAt > 0 then
 		local startedAt = Hub.RoundState.startedAt
-		return math.max(0, 180 - os.clock() - startedAt), "Estimated"
+		return math.max(0, 180 - (os.clock() - startedAt)), "Estimated"
 	end
 	return nil, "Unavailable"
 end
@@ -2396,6 +2597,122 @@ Hub.CoinFarm.CancelXPFarmWait = function()
 	Hub.CoinFarm.xpWaitRunning = false
 	Hub.CoinFarm.xpWaitShotStarted = false
 	Hub.CoinFarm.xpWaitFlingAttempted = false
+end
+
+Hub.CoinFarm.StartXPFarmWait = function()
+	local coinFarm = Hub.CoinFarm
+	if not coinFarm.xpFarmEnabled or not coinFarm.endRoundEnabled or not coinFarm.enabled or not coinFarm.bagFull or coinFarm.endRoundRunning or coinFarm.endRoundCompleted or coinFarm.endRoundDeathRequested or not Hub.RoundState.active then
+		return false
+	end
+
+	if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+		Hub.RoleState.Sync(false)
+	end
+	local role = coinFarm.GetCachedRole(localPlayer)
+	if role == "Murderer" or role == "Zombie" then
+		return false
+	end
+	local charNow = localPlayer.Character
+	local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+	if (charNow and (charNow:FindFirstChild("Knife") or charNow:FindFirstChild("ZombieKnife") or charNow:FindFirstChild("Claws")))
+		or (backpack and (backpack:FindFirstChild("Knife") or backpack:FindFirstChild("ZombieKnife") or backpack:FindFirstChild("Claws"))) then
+		return false
+	end
+
+	if coinFarm.xpWaitRunning then
+		return true
+	end
+
+	coinFarm.xpWaitRunning = true
+	coinFarm.xpWaitGeneration = coinFarm.xpWaitGeneration + 1
+	coinFarm.xpWaitShotStarted = false
+	coinFarm.xpWaitFlingAttempted = false
+	local gen = coinFarm.xpWaitGeneration
+
+	coinFarm.CancelTween()
+	coinFarm.LeaveUnderSafely(nil, true)
+	coinFarm.ReleaseTravelNoclip(false)
+	Hub.inLobby = false
+	coinFarm.SetPhase("Waiting for XP (Safezone)")
+	if type(coinFarm.TeleportToSafezone) == "function" then
+		coinFarm.TeleportToSafezone()
+	end
+
+	task.spawn(function()
+		while coinFarm.enabled and coinFarm.xpFarmEnabled and coinFarm.endRoundEnabled and Hub.RoundState.active and coinFarm.xpWaitGeneration == gen do
+			local char = localPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if not char or not hum or hum.Health <= 0 then
+				if coinFarm.xpWaitGeneration == gen then
+					coinFarm.xpWaitRunning = false
+				end
+				coinFarm.endRoundDeathRequested = true
+				coinFarm.QueueEndRoundAfterRespawn()
+				return
+			end
+
+			if not coinFarm.GetMurdererRoot() then
+				if coinFarm.xpWaitGeneration == gen then
+					coinFarm.xpWaitRunning = false
+				end
+				return
+			end
+
+			local remaining = coinFarm.GetRoundTimeRemaining and coinFarm.GetRoundTimeRemaining()
+			if remaining and remaining <= 10 then
+				break
+			end
+
+			if type(coinFarm.TeleportToSafezone) == "function" then
+				local safePart = Hub.SafezonePart
+				local hrp = char:FindFirstChild("HumanoidRootPart")
+				if not (safePart and safePart.Parent and hrp and (hrp.Position - (safePart.Position + Vector3.new(0, 3, 0))).Magnitude <= 6) then
+					coinFarm.TeleportToSafezone()
+				end
+			end
+
+			if remaining then
+				coinFarm.SetPhase(string.format("Waiting for XP (%ds)", math.max(0, math.ceil(remaining))))
+			else
+				coinFarm.SetPhase("Waiting for XP (Safezone)")
+			end
+
+			task.wait(0.25)
+		end
+
+		if not (coinFarm.enabled and coinFarm.xpFarmEnabled and coinFarm.endRoundEnabled and Hub.RoundState.active and coinFarm.xpWaitGeneration == gen) then
+			if coinFarm.xpWaitGeneration == gen then
+				coinFarm.xpWaitRunning = false
+			end
+			return
+		end
+
+		local curRole = coinFarm.GetCachedRole(localPlayer)
+		local hasGun = type(coinFarm.FindLocalGun) == "function" and coinFarm.FindLocalGun() ~= nil
+		local mode = coinFarm.endRoundMode or "Normal (shooting)"
+		if curRole ~= "Sheriff" and curRole ~= "Hero" and not hasGun and mode ~= "Fling All" and mode ~= "Fling Murderer" then
+			local gunDrop = workspace:FindFirstChild("GunDrop")
+			if gunDrop and gunDrop:IsA("BasePart") and type(Hub.TakeDroppedGunOnce) == "function" then
+				coinFarm.SetPhase("Ending round: Grabbing Dropped Gun")
+				Hub.TakeDroppedGunOnce(true)
+				task.wait(0.35)
+				if type(coinFarm.TeleportToSafezone) == "function" then
+					coinFarm.TeleportToSafezone()
+				end
+			end
+		end
+
+		if coinFarm.xpWaitGeneration ~= gen then
+			return
+		end
+		coinFarm.xpWaitRunning = false
+		coinFarm.xpWaitShotStarted = true
+		if Hub.RoundState.active and coinFarm.enabled and coinFarm.endRoundEnabled then
+			coinFarm.StartEndRoundAction()
+		end
+	end)
+
+	return true
 end
 
 Hub.CoinFarm.CancelEndRoundRespawnRetry = function()
@@ -2443,10 +2760,129 @@ Hub.CoinFarm.CancelTween = function()
 	end)
 end
 
+Hub.CoinFarm._travelParts = Hub.CoinFarm._travelParts or {}
+
+Hub.CoinFarm.ReleaseTravelNoclip = function(nudgeOutOfWall)
+	local conn = Hub.CoinFarm._travelNoclipConn
+	if conn then
+		conn:Disconnect()
+		Hub.CoinFarm._travelNoclipConn = nil
+	end
+	if Hub.CoinFarm._travelCleanup == Hub.CoinFarm.ReleaseTravelNoclip then
+		Hub.CoinFarm._travelCleanup = nil
+	end
+	local character = Hub.CoinFarm._travelCharacter or (localPlayer and localPlayer.Character)
+	Hub.CoinFarm._travelCharacter = nil
+	local hum = character and character:FindFirstChildOfClass("Humanoid")
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if hrp and hrp.Parent then
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		if nudgeOutOfWall ~= false and not Hub.NoclipEnabled and hum and hum.Health > 0 and typeof(workspace.GetPartsInPart) == "function" then
+			local op = OverlapParams.new()
+			op.FilterType = Enum.RaycastFilterType.Exclude
+			op.FilterDescendantsInstances = { character }
+			op.RespectCanCollide = true
+			local okHits, hits = pcall(workspace.GetPartsInPart, workspace, hrp, op)
+			if okHits and type(hits) == "table" and #hits > 0 then
+				local map = Hub.CoinFarm.indexedMap or Hub.RoundState.currentMapInstance
+				if not (map and Hub.CoinFarm.TeleportToMapSurface(map)) then
+					local nudged = false
+					for step = 1, 4 do
+						local probeCF = hrp.CFrame + Vector3.new(0, step * 4, 0)
+						hrp.CFrame = probeCF
+						local okProbe, probeHits = pcall(workspace.GetPartsInPart, workspace, hrp, op)
+						if okProbe and type(probeHits) == "table" and #probeHits == 0 then
+							nudged = true
+							break
+						end
+					end
+					if not nudged and map then
+						Hub.CoinFarm.TeleportToMapSpawn(map)
+					end
+				end
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+			end
+		end
+	end
+	local isUnder = Hub.CoinFarm.position == "Under" or Hub.CoinFarm.mode == "Tween" or Hub.CoinFarm.escapeUnderActive
+	if not Hub.CoinFarm.enabled or not isUnder then
+		if hum and hum.Parent and not Hub.FlyEnabled then
+			hum.PlatformStand = false
+		end
+		if not Hub.NoclipEnabled then
+			for part, prev in pairs(Hub.CoinFarm._travelParts) do
+				if part and part.Parent then
+					part.CanCollide = prev
+				end
+			end
+		end
+	end
+	table.clear(Hub.CoinFarm._travelParts)
+end
+
+Hub.CoinFarm.EnforceTravelNoclip = function(character)
+	if not character or not character.Parent then
+		return
+	end
+	local saved = Hub.CoinFarm._travelParts
+	if Hub.CoinFarm._travelCharacter ~= character then
+		table.clear(saved)
+		Hub.CoinFarm._travelCharacter = character
+	end
+	local function applyPass(c)
+		for _, part in ipairs(c:GetDescendants()) do
+			if part:IsA("BasePart") then
+				if saved[part] == nil then
+					saved[part] = part.CanCollide
+				end
+				if part.CanCollide then
+					part.CanCollide = false
+				end
+			end
+		end
+		local h = c:FindFirstChildOfClass("Humanoid")
+		local underNow = Hub.CoinFarm.position == "Under" or Hub.CoinFarm.mode == "Tween" or Hub.CoinFarm.escapeUnderActive
+		if not underNow and h and h.Parent and not h.PlatformStand then
+			h.PlatformStand = true
+		end
+	end
+	applyPass(character)
+	Hub.CoinFarm._travelCleanup = Hub.CoinFarm.ReleaseTravelNoclip
+	if Hub.CoinFarm._travelNoclipConn and Hub.CoinFarm._travelNoclipConn.Connected then
+		return
+	end
+	Hub.CoinFarm._travelNoclipConn = RunService.Stepped:Connect(function()
+		local c = localPlayer and localPlayer.Character
+		if not Hub.CoinFarm.enabled or not foxnameMM2Runtime.alive or isTerminated or not Hub.RoundState.active or not c or not c.Parent then
+			Hub.CoinFarm.ReleaseTravelNoclip(true)
+			return
+		end
+		if c ~= Hub.CoinFarm._travelCharacter then
+			table.clear(saved)
+			Hub.CoinFarm._travelCharacter = c
+		end
+		applyPass(c)
+	end)
+end
+
+Hub.CoinFarm.GetTravelCFrame = function(pos, isUnder)
+	if isUnder then
+		return CFrame.new(pos) * CFrame.Angles(-math.pi * 0.5, 0, 0)
+	end
+	return CFrame.new(pos)
+end
+
 Hub.CoinFarm.DisableUnder = function()
 	if Hub.CoinFarm.underAddedConnection then
 		Hub.CoinFarm.underAddedConnection:Disconnect()
 		Hub.CoinFarm.underAddedConnection = nil
+	end
+
+	if Hub.CoinFarm.underPoseConnection then
+		Hub.CoinFarm.underPoseConnection:Disconnect()
+		Hub.CoinFarm.underPoseConnection = nil
 	end
 
 	if Hub.CoinFarm.stabilizer then
@@ -2458,6 +2894,21 @@ Hub.CoinFarm.DisableUnder = function()
 	end
 
 	Hub.CoinFarm.stabilizerRoot = nil
+	Hub.CoinFarm.preCoinHoverActive = false
+
+	local prevChar = Hub.CoinFarm.underCharacter or (localPlayer and localPlayer.Character)
+	if prevChar and prevChar.Parent then
+		local prevHum = prevChar:FindFirstChildOfClass("Humanoid")
+		local prevRoot = prevChar:FindFirstChild("HumanoidRootPart")
+		if prevHum and not Hub.FlyEnabled then
+			prevHum.PlatformStand = false
+		end
+		if prevRoot and prevRoot.Parent then
+			prevRoot.AssemblyLinearVelocity = Vector3.zero
+			prevRoot.AssemblyAngularVelocity = Vector3.zero
+			prevRoot.CFrame = CFrame.new(prevRoot.Position)
+		end
+	end
 
 	for k, underPart in pairs(Hub.CoinFarm.underParts) do
 		if k and k.Parent then
@@ -2504,7 +2955,9 @@ Hub.CoinFarm.TrackUnderPart = function(arg)
 end
 
 Hub.CoinFarm.EnableUnder = function(underCharacter, arg, arg2)
-	if not (arg2 == true or Hub.CoinFarm.position == "Under" or Hub.CoinFarm.mode == "Tween") or not Hub.CoinFarm.enabled or not Hub.RoundState.active then
+	local forceLay = arg2 == true
+	local underPoseWanted = forceLay or Hub.CoinFarm.position == "Under"
+	if not (underPoseWanted or Hub.CoinFarm.mode == "Tween") or not Hub.CoinFarm.enabled or not Hub.RoundState.active then
 		Hub.CoinFarm.DisableUnder()
 		return
 	end
@@ -2541,12 +2994,21 @@ Hub.CoinFarm.EnableUnder = function(underCharacter, arg, arg2)
 		end
 	end
 
+	local humanoid = underCharacter:FindFirstChildOfClass("Humanoid")
 	local humanoidRootPart = underCharacter:FindFirstChild("HumanoidRootPart")
 	if not humanoidRootPart then
 		return
 	end
 
-	if Hub.CoinFarm.position ~= "Under" and arg2 ~= true or arg == false then
+	if underPoseWanted and humanoid and humanoid.Health > 0 and not humanoid.PlatformStand then
+		humanoid.PlatformStand = true
+	end
+
+	if not underPoseWanted or arg == false then
+		if Hub.CoinFarm.underPoseConnection then
+			Hub.CoinFarm.underPoseConnection:Disconnect()
+			Hub.CoinFarm.underPoseConnection = nil
+		end
 		if Hub.CoinFarm.stabilizer then
 			Hub.CoinFarm.stabilizer:Destroy()
 			Hub.CoinFarm.stabilizer = nil
@@ -2564,12 +3026,134 @@ Hub.CoinFarm.EnableUnder = function(underCharacter, arg, arg2)
 		local bodyVelocity = Instance.new("BodyVelocity")
 		bodyVelocity.Name = "FoxnameCoinFarmStabilizer"
 		bodyVelocity.Velocity = Vector3.zero
-		bodyVelocity.MaxForce = Vector3.new(0, 9e9, 0)
+		bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
 		bodyVelocity.P = 90000
 		bodyVelocity.Parent = humanoidRootPart
 		Hub.CoinFarm.stabilizer = bodyVelocity
 		Hub.CoinFarm.stabilizerRoot = humanoidRootPart
 	end
+
+	humanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+	humanoidRootPart.CFrame = Hub.CoinFarm.GetTravelCFrame(humanoidRootPart.Position, true)
+
+	if not Hub.CoinFarm.underPoseConnection or not Hub.CoinFarm.underPoseConnection.Connected then
+		Hub.CoinFarm.underPoseConnection = RunService.Stepped:Connect(function()
+			if not foxnameMM2Runtime.alive or isTerminated or not Hub.CoinFarm.enabled or not Hub.RoundState.active or Hub.FlingActive then
+				if Hub.CoinFarm.underPoseConnection then
+					Hub.CoinFarm.underPoseConnection:Disconnect()
+					Hub.CoinFarm.underPoseConnection = nil
+				end
+				return
+			end
+			if Hub.CoinFarm.position ~= "Under" and not Hub.CoinFarm.escapeUnderActive and not Hub.CoinFarm.preCoinHoverActive then
+				return
+			end
+			local c = localPlayer and localPlayer.Character
+			local hrp = c and c:FindFirstChild("HumanoidRootPart")
+			local hum = c and c:FindFirstChildOfClass("Humanoid")
+			if hrp and hum and hum.Health > 0 then
+				if not hum.PlatformStand then
+					hum.PlatformStand = true
+				end
+				hrp.AssemblyAngularVelocity = Vector3.zero
+				if not Hub.CoinFarm.activeTween then
+					hrp.CFrame = Hub.CoinFarm.GetTravelCFrame(hrp.Position, true)
+				end
+			end
+		end)
+	end
+end
+
+Hub.CoinFarm.GetSafeHoverCFrame = function(map)
+	local character = localPlayer and localPlayer.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return nil
+	end
+	local targetMap = map or Hub.CoinFarm.indexedMap or Hub.RoundState.currentMapInstance or Hub.CoinFarm.ResolveMap()
+	local isUnder = Hub.CoinFarm.position == "Under"
+	local minY, maxY = hrp.Position.Y - 4, hrp.Position.Y + 4
+	local xzPos = hrp.Position
+
+	if targetMap and targetMap.Parent then
+		local okBB, bbCF, bbSize = pcall(targetMap.GetBoundingBox, targetMap)
+		if okBB and bbCF and bbSize and bbSize.Magnitude > 1 then
+			minY = bbCF.Position.Y - bbSize.Y * 0.5
+			maxY = bbCF.Position.Y + bbSize.Y * 0.5
+			xzPos = bbCF.Position
+		end
+		local murdRoot = Hub.CoinFarm.GetMurdererRoot(hrp.Position)
+		local bestSpawn = murdRoot and Hub.CoinFarm.GetFurthestSpawn(targetMap, murdRoot.Position) or Hub.CoinFarm.GetMapSpawns(targetMap)[1]
+		if bestSpawn then
+			xzPos = bestSpawn.Position
+			if not okBB then
+				minY = bestSpawn.Position.Y - 4
+				maxY = bestSpawn.Position.Y + 12
+			end
+		end
+	end
+
+	local fallenHeight = tonumber(workspace.FallenPartsDestroyHeight)
+	if not fallenHeight or fallenHeight ~= fallenHeight or fallenHeight > -50 then
+		fallenHeight = -500
+	end
+
+	local hoverY = isUnder and math.max(minY - 12, fallenHeight + 35) or math.max(maxY + 18, xzPos.Y + 45)
+	return Hub.CoinFarm.GetTravelCFrame(Vector3.new(xzPos.X, hoverY, xzPos.Z), isUnder), isUnder
+end
+
+Hub.CoinFarm.MaintainPreCoinHover = function(phaseText)
+	if not Hub.CoinFarm.enabled or not Hub.RoundState.active or Hub.CoinFarm.lobbyFarmEnabled or Hub.FlingActive or Hub.CoinFarm.sheriffFlingRunning or Hub.CoinFarm.bagFull then
+		return false
+	end
+	if not Hub.CoinFarm.IsLocalPlayerInRound() then
+		return false
+	end
+	local character = localPlayer and localPlayer.Character
+	local hum = character and character:FindFirstChildOfClass("Humanoid")
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not character or not hum or hum.Health <= 0 or not hrp then
+		return false
+	end
+	local map = Hub.CoinFarm.indexedMap or Hub.RoundState.currentMapInstance or Hub.CoinFarm.ResolveMap()
+	if not map then
+		return false
+	end
+	local hoverCF, isUnder = Hub.CoinFarm.GetSafeHoverCFrame(map)
+	if not hoverCF then
+		return false
+	end
+
+	Hub.CoinFarm.CancelTween()
+	if isUnder then
+		Hub.CoinFarm.EnableUnder(character, true, true)
+	else
+		Hub.CoinFarm.EnforceTravelNoclip(character)
+		if not Hub.CoinFarm.stabilizer or Hub.CoinFarm.stabilizer.Parent ~= hrp or Hub.CoinFarm.stabilizerRoot ~= hrp then
+			if Hub.CoinFarm.stabilizer then
+				pcall(function() Hub.CoinFarm.stabilizer:Destroy() end)
+			end
+			local bv = Instance.new("BodyVelocity")
+			bv.Name = "FoxnameCoinFarmStabilizer"
+			bv.Velocity = Vector3.zero
+			bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+			bv.P = 90000
+			bv.Parent = hrp
+			Hub.CoinFarm.stabilizer = bv
+			Hub.CoinFarm.stabilizerRoot = hrp
+		end
+	end
+
+	hrp.AssemblyLinearVelocity = Vector3.zero
+	hrp.AssemblyAngularVelocity = Vector3.zero
+	Hub.CoinFarm.preCoinHoverActive = true
+	if (hrp.Position - hoverCF.Position).Magnitude > 2.5 or (isUnder and hrp.CFrame.UpVector.Y > 0.5) then
+		hrp.CFrame = hoverCF
+	end
+	if phaseText then
+		Hub.CoinFarm.SetPhase(phaseText)
+	end
+	return true
 end
 
 Hub.GetLobbyCFrame = function()
@@ -2649,10 +3233,19 @@ Hub.CoinFarm.ResolveMap = function()
 		end
 	end
 
-	local lobby = workspace:FindFirstChild("Lobby")
+	local excludedLobbies = {
+		Lobby = true,
+		SummerLobby = true,
+		NormalLobby = true,
+		HalloweenLobby = true,
+		ChristmasLobby = true,
+		WinterLobby = true,
+		EasterLobby = true,
+		SpringLobby = true,
+	}
 
 	for _, child in ipairs(workspace:GetChildren()) do
-		if child ~= lobby and (child:IsA("Model") or child:IsA("Folder")) and (child:FindFirstChild("Coin_Server", true) or child:FindFirstChild("Candy_Server", true) or child:FindFirstChild("CoinContainer", true) or child:FindFirstChild("CandyContainer", true)) then
+		if not excludedLobbies[child.Name] and (child:IsA("Model") or child:IsA("Folder")) and (child:FindFirstChild("Coin_Server", true) or child:FindFirstChild("Candy_Server", true) or child:FindFirstChild("CoinContainer", true) or child:FindFirstChild("CandyContainer", true)) then
 			Hub.RoundState.currentMapName = child.Name
 			Hub.RoundState.currentMapInstance = child
 			return child
@@ -2662,12 +3255,61 @@ Hub.CoinFarm.ResolveMap = function()
 	return nil
 end
 
+Hub.RoleState.Sync = function(forceRemote)
+	local now = os.clock()
+	if not forceRemote and Hub.RoleState.lastSyncAttemptAt and now - Hub.RoleState.lastSyncAttemptAt <= 1 then
+		return type(Hub.RoleState.cache) == "table" and next(Hub.RoleState.cache) ~= nil
+	end
+	Hub.RoleState.lastSyncAttemptAt = now
+
+	local mods = ReplicatedStorage:FindFirstChild("Modules")
+	local crMod = mods and mods:FindFirstChild("CurrentRoundClient")
+	if crMod then
+		local crData = safeRequire(crMod)
+		if type(crData) == "table" then
+			local pd = type(crData.PlayerData) == "table" and next(crData.PlayerData) ~= nil and crData.PlayerData or nil
+			if not pd and type(crData.GetLatestPlayerData) == "function" then
+				local okLatest, latest = pcall(crData.GetLatestPlayerData)
+				if okLatest and type(latest) == "table" and next(latest) ~= nil then
+					pd = latest
+				end
+			end
+			if pd then
+				Hub.RoleState.cache = pd
+				Hub.RoundState.active = true
+				return true
+			end
+		end
+	end
+
+	if forceRemote or not Hub.RoleState.lastRemoteSyncAt or now - Hub.RoleState.lastRemoteSyncAt >= 2 then
+		Hub.RoleState.lastRemoteSyncAt = now
+		local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+		local gameplay = remotes and remotes:FindFirstChild("Gameplay")
+		local getCurrent = gameplay and gameplay:FindFirstChild("GetCurrentPlayerData")
+		if getCurrent and getCurrent:IsA("RemoteFunction") then
+			local okRem, remData = pcall(getCurrent.InvokeServer, getCurrent)
+			if okRem and type(remData) == "table" and next(remData) ~= nil then
+				Hub.RoleState.cache = remData
+				Hub.RoundState.active = true
+				return true
+			end
+		end
+	end
+
+	return type(Hub.RoleState.cache) == "table" and next(Hub.RoleState.cache) ~= nil
+end
+
 Hub.CoinFarm.IsLocalPlayerInRound = function()
 	local character_ = localPlayer.Character
 	local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
 	if not character_ or not character_:IsDescendantOf(workspace) or not humanoid or humanoid.Health <= 0 then
 		return false
 	end
+	if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+		Hub.RoleState.Sync(false)
+	end
+
 	local cache = Hub.RoleState.cache
 	local flag7 = type(cache) == "table" and (cache[localPlayer.Name] or cache[tostring(localPlayer.UserId)] or cache[localPlayer.UserId]) or nil
 
@@ -2676,16 +3318,37 @@ Hub.CoinFarm.IsLocalPlayerInRound = function()
 			if flag7.Dead ~= true then
 				return true
 			end
+			return false
 		end
 	end
 
 	local backpack = localPlayer:FindFirstChildOfClass("Backpack")
 
-	if character_ then
-		character_ = character_:FindFirstChild("Gun") ~= nil or character_:FindFirstChild("Knife") ~= nil
+	if character_ and (character_:FindFirstChild("Gun") ~= nil or character_:FindFirstChild("Knife") ~= nil) then
+		return true
+	end
+	if backpack and (backpack:FindFirstChild("Gun") ~= nil or backpack:FindFirstChild("Knife") ~= nil) then
+		return true
 	end
 
-	return character_ or backpack and (backpack:FindFirstChild("Gun") ~= nil or backpack:FindFirstChild("Knife") ~= nil) or false
+	if Hub.RoundState.active then
+		if type(localPlayer.GetAttribute) == "function" and localPlayer:GetAttribute("Alive") == true then
+			return true
+		end
+		local hrp = character_:FindFirstChild("HumanoidRootPart")
+		local map = hrp and Hub.CoinFarm.ResolveMap()
+		if hrp and map and map.Parent then
+			local okBB, bbCF, bbSize = pcall(map.GetBoundingBox, map)
+			if okBB and bbCF and bbSize then
+				local dist = (hrp.Position - bbCF.Position).Magnitude
+				if dist <= math.max(bbSize.Magnitude * 0.75, 250) then
+					return true
+				end
+			end
+		end
+	end
+
+	return false
 end
 
 Hub.CoinFarm.GetCachedRole = function(arg)
@@ -2754,8 +3417,9 @@ end
 
 Hub.CoinFarm.GetMurdererRoot = function(nearPos)
 	local refPos = (typeof(nearPos) == "Vector3" and nearPos)
-		or (nearPos and nearPos:IsA("BasePart") and nearPos.Position)
-		or (nearPos and nearPos:IsA("Model") and nearPos.PrimaryPart and nearPos.PrimaryPart.Position)
+		or (type(nearPos) == "table" and nearPos.X ~= nil and nearPos.Y ~= nil and nearPos.Z ~= nil and nearPos.Position == nil and nearPos)
+		or (nearPos and type(nearPos.IsA) == "function" and nearPos:IsA("BasePart") and nearPos.Position)
+		or (nearPos and type(nearPos.IsA) == "function" and nearPos:IsA("Model") and nearPos.PrimaryPart and nearPos.PrimaryPart.Position)
 		or (localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart") and localPlayer.Character.HumanoidRootPart.Position)
 	local closestRoot = nil
 	local closestDist = math.huge
@@ -2871,6 +3535,7 @@ Hub.CoinFarm.RunInitialSafety = function(arg)
 		return true
 	end
 	Hub.CoinFarm.CancelTween()
+	Hub.CoinFarm.ReleaseTravelNoclip(false)
 	Hub.CoinFarm.DisableUnder()
 	local n3 = v9.Size.Y * 0.5 + arg.Size.Y * 0.5 + 3.5
 	arg.AssemblyLinearVelocity = Vector3.zero
@@ -2984,6 +3649,13 @@ Hub.CoinFarm.EscapeMurderer = function(arg, arg2)
 end
 
 Hub.CoinFarm.TrackCoin = function(arg)
+	if arg and (arg:IsA("Folder") or arg:IsA("Model")) and (arg.Name == "CoinContainer" or arg.Name == "CandyContainer") and arg.Parent then
+		Hub.CoinFarm.indexedCoinContainer = arg
+		for _, descendant in ipairs(arg:GetDescendants()) do
+			Hub.CoinFarm.TrackCoin(descendant)
+		end
+		return
+	end
 	if arg and arg:IsA("BasePart") and (arg.Name == "Coin_Server" or arg.Name == "Candy_Server") and arg.Parent then
 		Hub.CoinFarm.coins[arg] = true
 
@@ -3070,14 +3742,22 @@ Hub.CoinFarm.IsCoinAvailable = function(arg)
 
 	if not Hub.CoinFarm.IsCoinVisualPartVisible(v8, coinVisual) then
 		v8 = Hub.CoinFarm.IsCoinVisualPartVisible(coinVisual, coinVisual) and coinVisual or nil
+		local hasAnyPart = coinVisual:IsA("BasePart")
 
 		if not v8 then
 			for _, descendant in ipairs(coinVisual:GetDescendants()) do
-				if Hub.CoinFarm.IsCoinVisualPartVisible(descendant, coinVisual) then
-					v8 = descendant
-					break
+				if descendant:IsA("BasePart") then
+					hasAnyPart = true
+					if Hub.CoinFarm.IsCoinVisualPartVisible(descendant, coinVisual) then
+						v8 = descendant
+						break
+					end
 				end
 			end
+		end
+
+		if not hasAnyPart then
+			return true
 		end
 
 		Hub.CoinFarm.coinVisualParts[arg] = v8
@@ -3088,7 +3768,8 @@ end
 
 Hub.CoinFarm.IndexMap = function()
 	local v8 = Hub.CoinFarm.ResolveMap()
-	if v8 and Hub.CoinFarm.indexedMap == v8 then
+	local cachedContainer = Hub.CoinFarm.indexedCoinContainer
+	if v8 and Hub.CoinFarm.indexedMap == v8 and (not cachedContainer or cachedContainer.Parent ~= nil) and next(Hub.CoinFarm.coins) ~= nil then
 		return true
 	end
 	local now = os.clock()
@@ -3340,6 +4021,25 @@ Hub.CoinFarm.GetNearestCoin = function(arg, k, playerUserId)
 	if #candidates == 0 then
 		return nil
 	end
+
+	if Hub.AvoidMurderer and Hub.AvoidMurderer.enabled then
+		local murdRoot = Hub.CoinFarm.GetMurdererRoot(argPos)
+		if murdRoot then
+			local safeFloor = math.max(tonumber(Hub.AvoidMurderer.distance) or 35, 16) + 4
+			local safeCandidates = {}
+			for _, cand in ipairs(candidates) do
+				if (cand.coin.Position - murdRoot.Position).Magnitude > safeFloor then
+					table.insert(safeCandidates, cand)
+				end
+			end
+			if #safeCandidates > 0 then
+				candidates = safeCandidates
+			elseif os.clock() < (Hub.CoinFarm.evasionGraceUntil or 0) then
+				return nil
+			end
+		end
+	end
+
 	if #candidates == 1 then
 		return candidates[1].coin
 	end
@@ -3412,19 +4112,41 @@ Hub.CoinFarm.MarkCurrentCollected = function()
 	end
 end
 
-Hub.CoinFarm.FindBagCountLabel = function()
+local function findActiveBagGui()
 	local playerGui = localPlayer:FindFirstChild("PlayerGui")
-	playerGui = playerGui and playerGui:FindFirstChild("MainGUI")
-	playerGui = playerGui and playerGui:FindFirstChild("Game")
-	playerGui = playerGui and playerGui:FindFirstChild("CoinBags")
-	local container = playerGui and playerGui:FindFirstChild("Container")
-	if not container then
+	local mainGui = playerGui and playerGui:FindFirstChild("MainGUI")
+	local gameGui = mainGui and mainGui:FindFirstChild("Game")
+	local coinBags = gameGui and gameGui:FindFirstChild("CoinBags")
+	if not coinBags then
 		return nil
 	end
-	local bag = (container:FindFirstChild("Candy") and container.Candy.Visible and container.Candy)
-		or (container:FindFirstChild("Coin") and container.Coin.Visible and container.Coin)
-		or container:FindFirstChild("Candy")
-		or container:FindFirstChild("Coin")
+	local candidates = {}
+	local container = coinBags:FindFirstChild("Container")
+	if container then
+		for _, child in ipairs(container:GetChildren()) do
+			if child:IsA("GuiObject") then
+				table.insert(candidates, child)
+			end
+		end
+	end
+	local legacy = coinBags:FindFirstChild("CoinBagContainerScript")
+	if legacy then
+		for _, child in ipairs(legacy:GetChildren()) do
+			if child:IsA("GuiObject") and (child:FindFirstChild("CurrencyFrame") or child:FindFirstChild("Full")) then
+				table.insert(candidates, child)
+			end
+		end
+	end
+	for _, bag in ipairs(candidates) do
+		if bag.Visible then
+			return bag
+		end
+	end
+	return candidates[1]
+end
+
+Hub.CoinFarm.FindBagCountLabel = function()
+	local bag = findActiveBagGui()
 	local coin = bag and bag:FindFirstChild("CurrencyFrame")
 	coin = coin and coin:FindFirstChild("Icon")
 	coin = coin and coin:FindFirstChild("Coins")
@@ -3565,20 +4287,15 @@ Hub.CoinFarm.CheckBagFullGui = function()
 	if not Hub.CoinFarm.enabled then
 		return false
 	end
-	local playerGui = localPlayer:FindFirstChild("PlayerGui")
-	playerGui = playerGui and playerGui:FindFirstChild("MainGUI")
-	playerGui = playerGui and playerGui:FindFirstChild("Game")
-	playerGui = playerGui and playerGui:FindFirstChild("CoinBags")
-	local container = playerGui and playerGui:FindFirstChild("Container")
-	if not container then
+	local bag = findActiveBagGui()
+	if not bag then
 		return false
 	end
-	local bag = (container:FindFirstChild("Candy") and container.Candy.Visible and container.Candy)
-		or (container:FindFirstChild("Coin") and container.Coin.Visible and container.Coin)
-		or container:FindFirstChild("Candy")
-		or container:FindFirstChild("Coin")
-	local full = bag and bag:FindFirstChild("Full")
-	if not full or not full:IsA("GuiObject") or full.Visible ~= true then
+	local full = bag:FindFirstChild("Full")
+	local fullIcon = bag:FindFirstChild("FullBagIcon")
+	local isFull = (full and full:IsA("GuiObject") and full.Visible == true)
+		or (fullIcon and fullIcon:IsA("GuiObject") and fullIcon.Visible == true)
+	if not isFull then
 		return false
 	end
 	Hub.CoinFarm.bagFull = true
@@ -3599,9 +4316,174 @@ Hub.CoinFarm.CheckBagFullGui = function()
 	return true
 end
 
+local END_ROUND_CLEAR_OFFSETS = {
+	Vector3.new(0, 1.5, 8.5),
+	Vector3.new(8.5, 1.5, 0),
+	Vector3.new(-8.5, 1.5, 0),
+	Vector3.new(0, 1.5, -8.5),
+	Vector3.new(6, 1.5, 6),
+	Vector3.new(-6, 1.5, 6),
+	Vector3.new(6, 1.5, -6),
+	Vector3.new(-6, 1.5, -6),
+	Vector3.new(0, 6.5, 4.5),
+	Vector3.new(0, 1.5, 6),
+}
+
+local function raycastClear(origin, dir, extraIgnore)
+	if dir.Magnitude < 1e-3 then
+		return true
+	end
+	if type(Hub.CoinFarm.RaycastWeapon) == "function" then
+		return Hub.CoinFarm.RaycastWeapon(origin, dir, extraIgnore) == nil
+	end
+	local rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	rp.FilterDescendantsInstances = extraIgnore
+	local hit = workspace:Raycast(origin, dir, rp)
+	return not hit or (hit.Instance and hit.Instance.Transparency >= 0.99)
+end
+
+local function findClearShotCF(char, murdRoot)
+	local extraIgnore = { char, murdRoot.Parent }
+	for _, off in ipairs(END_ROUND_CLEAR_OFFSETS) do
+		local candPos = murdRoot.Position + off
+		local candCF = CFrame.lookAt(candPos, murdRoot.Position)
+		local candHead = candCF:PointToWorldSpace(Vector3.new(0, 1.5, 0))
+		local candMuzzle = candCF:PointToWorldSpace(Vector3.new(1.4, 1.25, -3.45))
+		if raycastClear(murdRoot.Position, candPos - murdRoot.Position, extraIgnore)
+			and raycastClear(candHead, candMuzzle - candHead, extraIgnore)
+			and raycastClear(candMuzzle, murdRoot.Position - candMuzzle, extraIgnore) then
+			return candCF
+		end
+	end
+	return nil
+end
+
+local function toSafezone(fallbackCF)
+	if type(Hub.CoinFarm.TeleportToSafezone) == "function" and Hub.CoinFarm.TeleportToSafezone() then
+		return
+	end
+	local char = localPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if fallbackCF and hrp and hrp.Parent then
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		char:PivotTo(fallbackCF)
+		hrp.CFrame = fallbackCF
+	end
+end
+
+local function handleDeadEndRoundPlayer(endRoundGeneration)
+	local char = localPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if char and hum and hum.Health > 0 then
+		return false
+	end
+	if Hub.CoinFarm.endRoundGeneration == endRoundGeneration then
+		Hub.CoinFarm.endRoundRunning = false
+	end
+	Hub.CoinFarm.endRoundDeathRequested = true
+	Hub.CoinFarm.QueueEndRoundAfterRespawn()
+	return true
+end
+
+local function waitEndRound(endRoundGeneration, shootState, duration)
+	local waitUntil = os.clock() + duration
+	while os.clock() < waitUntil and Hub.RoundState.active and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundGeneration == endRoundGeneration do
+		if not Hub.CoinFarm.GetMurdererRoot() then
+			shootState.completed = true
+			return true
+		end
+		task.wait(0.1)
+	end
+	return shootState.completed
+end
+
+local function equipGunInSafezone()
+	local gun = type(Hub.CoinFarm.FindLocalGun) == "function" and Hub.CoinFarm.FindLocalGun()
+	local char = localPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if gun and char and hum and gun.Parent ~= char then
+		hum:EquipTool(gun)
+		RunService.Heartbeat:Wait()
+		task.wait(0.05)
+	end
+end
+
+local function tryEndRoundShoot(endRoundGeneration, shootState, attemptIdx)
+	if type(Hub.CoinFarm.shootMurderer) ~= "function" then
+		return false
+	end
+	toSafezone()
+	if attemptIdx > 1 and shootState.lastShotAt > 0 then
+		local reloadWindow = math.max((Hub.AutoShootState and Hub.AutoShootState.tapWindow) or 2.25, 2.25)
+		local remaining = reloadWindow - (os.clock() - shootState.lastShotAt)
+		if remaining > 0 and waitEndRound(endRoundGeneration, shootState, remaining) then
+			return true
+		end
+	end
+	if not Hub.RoundState.active or not Hub.CoinFarm.enabled or Hub.CoinFarm.endRoundGeneration ~= endRoundGeneration then
+		return false
+	end
+	if not Hub.CoinFarm.GetMurdererRoot() then
+		shootState.completed = true
+		return true
+	end
+
+	local useNormal = attemptIdx >= 3
+	local shootOpts = {
+		ignoreCooldown = true,
+		targetPart = attemptIdx % 2 == 1 and "HumanoidRootPart" or "Head",
+		mode = useNormal and "Normal" or "Behind Walls",
+	}
+	local prevCF = nil
+	local char = localPlayer.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if useNormal and char and hrp then
+		equipGunInSafezone()
+		char = localPlayer.Character
+		hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local murdRoot = hrp and Hub.CoinFarm.GetMurdererRoot(hrp.Position)
+		local clearCF = murdRoot and findClearShotCF(char, murdRoot)
+		if clearCF and hrp then
+			prevCF = hrp.CFrame
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			char:PivotTo(clearCF)
+			hrp.CFrame = clearCF
+			RunService.Heartbeat:Wait()
+			RunService.Heartbeat:Wait()
+			if not Hub.RoundState.active or not Hub.CoinFarm.enabled or Hub.CoinFarm.endRoundGeneration ~= endRoundGeneration then
+				toSafezone(prevCF)
+				return false
+			end
+			local freshMurd = Hub.CoinFarm.GetMurdererRoot(hrp.Position)
+			if freshMurd and (freshMurd.Position - hrp.Position).Magnitude > 0.5 then
+				hrp.CFrame = CFrame.lookAt(hrp.Position, freshMurd.Position)
+			end
+		else
+			shootOpts.mode = "Behind Walls"
+		end
+	end
+
+	local fired = Hub.CoinFarm.shootMurderer(endRoundGeneration, shootOpts) == true
+	if prevCF then
+		RunService.Heartbeat:Wait()
+		toSafezone(prevCF)
+	end
+	if not fired then
+		return false
+	end
+	shootState.lastShotAt = os.clock()
+	return waitEndRound(endRoundGeneration, shootState, 0.9)
+end
+
 Hub.CoinFarm.StartEndRoundAction = function()
 	if not Hub.CoinFarm.endRoundEnabled or not Hub.CoinFarm.enabled or not Hub.CoinFarm.bagFull and not Hub.CoinFarm.endRoundDeathRequested or Hub.CoinFarm.endRoundRunning or Hub.CoinFarm.endRoundCompleted or Hub.CoinFarm.xpWaitRunning or not Hub.RoundState.active then
 		return false
+	end
+	if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+		Hub.RoleState.Sync(false)
 	end
 	local str = Hub.CoinFarm.GetCachedRole(localPlayer)
 
@@ -3640,7 +4522,7 @@ Hub.CoinFarm.StartEndRoundAction = function()
 	end
 
 	task.spawn(function()
-		local endRoundCompleted = false
+		local shootState = { completed = false, lastShotAt = 0 }
 
 		if (str == "Murderer" or str == "Zombie") and not Hub.CoinFarm.endRoundDeathRequested and mode ~= "Fling All" then
 			local runKnifeAura = Hub.CoinFarm.runKnifeAura
@@ -3648,13 +4530,13 @@ Hub.CoinFarm.StartEndRoundAction = function()
 
 			while true do
 				local flag8 = n2 < 8 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration
-				endRoundCompleted = false
+				shootState.completed = false
 
 				if flag8 then
 					n2 += 1
 
 					if type(runKnifeAura) == "function" and runKnifeAura(endRoundGeneration) == true then
-						endRoundCompleted = true
+						shootState.completed = true
 						break
 					else
 						task.wait(0.25)
@@ -3665,129 +4547,107 @@ Hub.CoinFarm.StartEndRoundAction = function()
 				break
 			end
 		elseif mode == "Fling All" then
-			local character_ = localPlayer.Character
-			local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
-			if not humanoid or humanoid.Health <= 0 then
-				Hub.CoinFarm.endRoundDeathRequested = true
-				Hub.CoinFarm.QueueEndRoundAfterRespawn()
+			if handleDeadEndRoundPlayer(endRoundGeneration) then
 				return
 			end
 			if type(Hub.CoinFarm.flingAll) == "function" then
-				endRoundCompleted = Hub.CoinFarm.flingAll() == true
+				shootState.completed = Hub.CoinFarm.flingAll() == true
 			end
 		elseif mode == "Fling Murderer" then
 			local n2 = 0
-			while true do
-				local flag8 = n2 < 3 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration
-				if flag8 then
-					local character_ = localPlayer.Character
-					local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
-					if not humanoid or humanoid.Health <= 0 then
-						Hub.CoinFarm.endRoundDeathRequested = true
-						Hub.CoinFarm.QueueEndRoundAfterRespawn()
-						return
-					end
-					n2 += 1
-					Hub.CoinFarm.SetPhase("Ending round: Fling Murderer")
-					if type(Hub.CoinFarm.flingMurderer) == "function" and Hub.CoinFarm.flingMurderer() == true then
-						endRoundCompleted = true
-						break
-					end
-					task.wait(0.4)
-					continue
+			while n2 < 3 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration do
+				if handleDeadEndRoundPlayer(endRoundGeneration) then
+					return
 				end
-				break
+				n2 += 1
+				Hub.CoinFarm.SetPhase("Ending round: Fling Murderer")
+				if type(Hub.CoinFarm.flingMurderer) == "function" and Hub.CoinFarm.flingMurderer() == true then
+					shootState.completed = true
+					break
+				end
+				task.wait(0.4)
 			end
 		elseif mode == "Shoot only if Gun Dropped" then
-			local character_ = localPlayer.Character
-			local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
-			if not humanoid or humanoid.Health <= 0 then
-				Hub.CoinFarm.endRoundDeathRequested = true
-				Hub.CoinFarm.QueueEndRoundAfterRespawn()
-				return
-			end
-			local v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
-			if v8 == "Hero" then
-				Hub.CoinFarm.SetPhase("Ending round: Auto Shoot (Hero)")
-				if type(Hub.CoinFarm.shootMurderer) == "function" and Hub.CoinFarm.shootMurderer(endRoundGeneration) == true then
-					endRoundCompleted = true
+			local waitTicks = 0
+			local shotAttempt = 0
+			while shotAttempt < 8 and waitTicks < 100 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration do
+				if handleDeadEndRoundPlayer(endRoundGeneration) then
+					return
 				end
-			else
-				local gunDrop = workspace:FindFirstChild("GunDrop")
-				if gunDrop and gunDrop:IsA("BasePart") then
-					Hub.CoinFarm.SetPhase("Ending round: Grabbing Dropped Gun")
-					if type(Hub.TakeDroppedGunOnce) == "function" then
-						Hub.TakeDroppedGunOnce()
-						task.wait(0.25)
+				waitTicks += 1
+				local role = Hub.CoinFarm.GetCachedRole(localPlayer)
+				local hasGun = type(Hub.CoinFarm.FindLocalGun) == "function" and Hub.CoinFarm.FindLocalGun() ~= nil
+				if role ~= "Hero" and not hasGun then
+					local gunDrop = workspace:FindFirstChild("GunDrop")
+					if gunDrop and gunDrop:IsA("BasePart") and type(Hub.TakeDroppedGunOnce) == "function" then
+						Hub.CoinFarm.SetPhase("Ending round: Grabbing Dropped Gun")
+						Hub.TakeDroppedGunOnce(true)
+						task.wait(0.35)
+						toSafezone()
+						role = Hub.CoinFarm.GetCachedRole(localPlayer)
+						hasGun = type(Hub.CoinFarm.FindLocalGun) == "function" and Hub.CoinFarm.FindLocalGun() ~= nil
 					end
-					if Hub.CoinFarm.GetCachedRole(localPlayer) == "Hero" then
-						Hub.CoinFarm.SetPhase("Ending round: Auto Shoot (Hero)")
-						if type(Hub.CoinFarm.shootMurderer) == "function" and Hub.CoinFarm.shootMurderer(endRoundGeneration) == true then
-							endRoundCompleted = true
-						end
+				end
+				if role == "Hero" or hasGun then
+					shotAttempt += 1
+					Hub.CoinFarm.SetPhase("Ending round: Auto Shoot (Hero)")
+					if tryEndRoundShoot(endRoundGeneration, shootState, shotAttempt) then
+						break
 					end
+					task.wait(0.2)
 				else
+					toSafezone()
 					Hub.CoinFarm.SetPhase("Ending round: Gun Not Dropped (Suppressed)")
-					endRoundCompleted = false
+					task.wait(0.6)
 				end
 			end
 		else
 			task.wait(0.12)
 			local n2 = 0
-			while true do
-				local flag8 = n2 < 3 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration
-				endRoundCompleted = false
-
-				if flag8 then
-					local character_ = localPlayer.Character
-					local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
-
-					if not character_ or not humanoid or humanoid.Health <= 0 then
-						Hub.CoinFarm.endRoundDeathRequested = true
-						Hub.CoinFarm.QueueEndRoundAfterRespawn()
-						return
-					end
-
-					n2 += 1
-					local v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
-					local canShoot = not Hub.CoinFarm.endRoundDeathRequested and (v8 == "Sheriff" or v8 == "Hero")
-
-					if not canShoot and not Hub.CoinFarm.endRoundDeathRequested then
-						local gunDrop = workspace:FindFirstChild("GunDrop")
-						if gunDrop and gunDrop:IsA("BasePart") and type(Hub.TakeDroppedGunOnce) == "function" then
-							Hub.CoinFarm.SetPhase("Ending round: Grabbing Dropped Gun")
-							Hub.TakeDroppedGunOnce()
-							task.wait(0.25)
-							v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
-							canShoot = v8 == "Hero"
-						end
-					end
-
-					if canShoot then
-						Hub.CoinFarm.SetPhase("Ending round: Auto Shoot")
-						if type(Hub.CoinFarm.shootMurderer) == "function" and Hub.CoinFarm.shootMurderer(endRoundGeneration) == true then
-							endRoundCompleted = true
-							break
-						end
-					else
-						Hub.CoinFarm.SetPhase("Ending round: Fling Murderer")
-						if type(Hub.CoinFarm.flingMurderer) == "function" and Hub.CoinFarm.flingMurderer() == true then
-							endRoundCompleted = true
-							break
-						end
-					end
-
-					task.wait(0.4)
-					continue
+			while n2 < 8 and Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration do
+				shootState.completed = false
+				if handleDeadEndRoundPlayer(endRoundGeneration) then
+					return
 				end
 
-				break
+				n2 += 1
+				local role = Hub.CoinFarm.GetCachedRole(localPlayer)
+				local hasGun = type(Hub.CoinFarm.FindLocalGun) == "function" and Hub.CoinFarm.FindLocalGun() ~= nil
+				local canShoot = not Hub.CoinFarm.endRoundDeathRequested and (role == "Sheriff" or role == "Hero" or hasGun)
+
+				if not canShoot and not Hub.CoinFarm.endRoundDeathRequested then
+					local gunDrop = workspace:FindFirstChild("GunDrop")
+					if gunDrop and gunDrop:IsA("BasePart") and type(Hub.TakeDroppedGunOnce) == "function" then
+						Hub.CoinFarm.SetPhase("Ending round: Grabbing Dropped Gun")
+						Hub.TakeDroppedGunOnce(true)
+						task.wait(0.35)
+						toSafezone()
+						role = Hub.CoinFarm.GetCachedRole(localPlayer)
+						hasGun = type(Hub.CoinFarm.FindLocalGun) == "function" and Hub.CoinFarm.FindLocalGun() ~= nil
+						canShoot = role == "Hero" or role == "Sheriff" or hasGun
+					end
+				end
+
+				if canShoot and n2 <= 5 then
+					Hub.CoinFarm.SetPhase("Ending round: Auto Shoot")
+					if tryEndRoundShoot(endRoundGeneration, shootState, n2) then
+						break
+					end
+				elseif not canShoot or n2 > 5 then
+					Hub.CoinFarm.SetPhase("Ending round: Fling Murderer")
+					if type(Hub.CoinFarm.flingMurderer) == "function" and Hub.CoinFarm.flingMurderer() == true then
+						shootState.completed = true
+						break
+					end
+				end
+
+				task.wait(canShoot and n2 <= 5 and 0.15 or 0.5)
 			end
 		end
 
 		if Hub.CoinFarm.endRoundGeneration == endRoundGeneration then
 			Hub.CoinFarm.endRoundRunning = false
-			Hub.CoinFarm.endRoundCompleted = endRoundCompleted
+			Hub.CoinFarm.endRoundCompleted = shootState.completed
 		end
 	end)
 
@@ -3864,17 +4724,14 @@ Hub.CoinFarm.OnPlayerDataChanged = function()
 end
 
 Hub.CoinFarm.StartRoundSheriffFling = function()
-	local v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
-	local sheriffFlingRunning = Hub.CoinFarm.sheriffFlingRunning or Hub.CoinFarm.sheriffFlingCompleted or not Hub.CoinFarm.enabled or not Hub.CoinFarm.endRoundEnabled or not Hub.RoundState.active
-	local flag7
-
-	if sheriffFlingRunning then
-		flag7 = sheriffFlingRunning
-	else
-		flag7 = v8 ~= "Murderer" and v8 ~= "Innocent"
+	if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+		Hub.RoleState.Sync(false)
 	end
-
-	if flag7 then
+	local v8 = Hub.CoinFarm.GetCachedRole(localPlayer)
+	if Hub.CoinFarm.sheriffFlingRunning or Hub.CoinFarm.sheriffFlingCompleted or Hub.CoinFarm.bagFull or Hub.CoinFarm.endRoundRunning or not Hub.CoinFarm.enabled or not Hub.RoundState.active then
+		return false
+	end
+	if v8 ~= "Murderer" and v8 ~= "Innocent" then
 		return false
 	end
 	Hub.CoinFarm.sheriffFlingRunning = true
@@ -3884,7 +4741,7 @@ Hub.CoinFarm.StartRoundSheriffFling = function()
 	task.spawn(function()
 		local function fn12()
 			local v9 = Hub.CoinFarm.GetCachedRole(localPlayer)
-			return Hub.CoinFarm.enabled and Hub.CoinFarm.endRoundEnabled and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration and (v9 == "Murderer" or v9 == "Innocent")
+			return Hub.CoinFarm.enabled and not Hub.CoinFarm.bagFull and Hub.RoundState.active and Hub.CoinFarm.endRoundGeneration == endRoundGeneration and (v9 == "Murderer" or v9 == "Innocent")
 		end
 
 		local function fn13()
@@ -3892,72 +4749,74 @@ Hub.CoinFarm.StartRoundSheriffFling = function()
 			return gunDrop ~= nil and gunDrop:IsA("BasePart")
 		end
 
-		local n2 = os.clock() + 10
-		local flag8, flag9
+		local deadline = os.clock() + 20
+		local flag8 = false
+		local attempts = 0
 
-		while true do
-			local flag10 = fn12() and os.clock() < n2
-			flag8 = false
-			flag9 = false
+		while fn12() and os.clock() < deadline do
+			if fn13() then
+				flag8 = true
+				break
+			end
 
-			if flag10 then
-				if fn13() then
-					flag8 = true
-					break
-				else
-					local getSheriffFlingTarget = Hub.CoinFarm.getSheriffFlingTarget
-					local flag11 = type(getSheriffFlingTarget) == "function" and getSheriffFlingTarget() or nil
+			local getSheriffFlingTarget = Hub.CoinFarm.getSheriffFlingTarget
+			local sheriffTarget = type(getSheriffFlingTarget) == "function" and getSheriffFlingTarget() or nil
+			if not sheriffTarget then
+				Hub.RoleState.Sync(false)
+				sheriffTarget = type(getSheriffFlingTarget) == "function" and getSheriffFlingTarget() or nil
+			end
 
-					if flag11 and flag11 ~= localPlayer then
-						local character_ = localPlayer.Character
-						local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
-						character_ = character_ and character_:FindFirstChild("HumanoidRootPart")
-						local character_2 = flag11.Character
-						local humanoid2 = character_2 and character_2:FindFirstChildOfClass("Humanoid")
-						local humanoidRootPart = character_2 and character_2:FindFirstChild("HumanoidRootPart")
+			if sheriffTarget and sheriffTarget ~= localPlayer then
+				local character_ = localPlayer.Character
+				local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+				local hrp = character_ and character_:FindFirstChild("HumanoidRootPart")
+				local character_2 = sheriffTarget.Character
+				local humanoid2 = character_2 and character_2:FindFirstChildOfClass("Humanoid")
+				local humanoidRootPart = character_2 and character_2:FindFirstChild("HumanoidRootPart")
 
-						if Hub.CoinFarm.IsLocalPlayerInRound() and humanoid and humanoid.Health > 0 and character_ and character_2 and character_2:IsDescendantOf(workspace) and humanoid2 and humanoid2.Health > 0 and humanoidRootPart and fn12() then
-							Hub.CoinFarm.CancelTween()
-							Hub.CoinFarm.currentCoin = nil
-							Hub.CoinFarm.LeaveUnderSafely(nil, true)
-							RunService.Heartbeat:Wait()
-							local flingSheriff = Hub.CoinFarm.flingSheriff
+				if Hub.CoinFarm.IsLocalPlayerInRound() and humanoid and humanoid.Health > 0 and hrp and character_2 and character_2:IsDescendantOf(workspace) and humanoid2 and humanoid2.Health > 0 and humanoidRootPart and fn12() then
+					Hub.CoinFarm.CancelTween()
+					Hub.CoinFarm.currentCoin = nil
+					Hub.CoinFarm.LeaveUnderSafely(nil, true)
+					RunService.Heartbeat:Wait()
+					local flingSheriff = Hub.CoinFarm.flingSheriff
 
-							if type(flingSheriff) == "function" then
-								local result
-								flag8, result = pcall(flingSheriff, endRoundGeneration, flag11)
-								flag9 = true
-								flag8 = flag8 and result == true
-							end
-
+					if type(flingSheriff) == "function" then
+						attempts += 1
+						local ok, result = pcall(flingSheriff, endRoundGeneration, sheriffTarget)
+						flag8 = ok and result == true
+						if flag8 or fn13() or attempts >= 2 then
 							break
-						else
-							task.wait(0.1)
-							continue
 						end
-					else
-						task.wait(0.1)
+						task.wait(0.2)
 						continue
 					end
+					break
 				end
 			end
 
-			break
+			if not Hub.RoundState.coinsReady and not Hub.CoinFarm.lobbyFarmEnabled then
+				Hub.CoinFarm.MaintainPreCoinHover("Waiting for coins")
+			end
+			task.wait(0.1)
 		end
 
 		local character_ = localPlayer.Character
-		character_ = character_ and character_:FindFirstChildOfClass("Humanoid")
+		local hum = character_ and character_:FindFirstChildOfClass("Humanoid")
 		local currentCamera2 = workspace.CurrentCamera
 
-		if currentCamera2 and character_ then
+		if currentCamera2 and hum then
 			currentCamera2.CameraType = Enum.CameraType.Custom
-			currentCamera2.CameraSubject = character_
+			currentCamera2.CameraSubject = hum
 		end
 
 		if Hub.CoinFarm.endRoundGeneration == endRoundGeneration then
 			Hub.CoinFarm.sheriffFlingRunning = false
 			Hub.CoinFarm.sheriffFlingBlocking = false
-			Hub.CoinFarm.sheriffFlingCompleted = flag9 or flag8 or fn13()
+			Hub.CoinFarm.sheriffFlingCompleted = flag8 or fn13() or attempts >= 2
+			if Hub.CoinFarm.enabled and Hub.RoundState.active and not Hub.RoundState.coinsReady and not Hub.CoinFarm.lobbyFarmEnabled and not Hub.CoinFarm.bagFull then
+				Hub.CoinFarm.MaintainPreCoinHover("Waiting for coins")
+			end
 		end
 	end)
 
@@ -3970,6 +4829,7 @@ Hub.CoinFarm.OnRoundStarted = function()
 	Hub.CoinFarm.CancelXPFarmWait()
 	Hub.CoinFarm.CancelEndRoundRespawnRetry()
 	Hub.CoinFarm.CancelTween()
+	Hub.CoinFarm.ReleaseTravelNoclip(false)
 	Hub.CoinFarm.DisableUnder()
 	Hub.CoinFarm.ranThisRound = false
 	Hub.CoinFarm.endTeleportDone = false
@@ -3978,6 +4838,8 @@ Hub.CoinFarm.OnRoundStarted = function()
 	Hub.CoinFarm.nextMurdererCheckAt = 0
 	Hub.CoinFarm.nextMurdererEscapeAt = 0
 	Hub.CoinFarm.evasionGraceUntil = 0
+	Hub.CoinFarm.lastLobbyCoinPos = nil
+	Hub.CoinFarm.lastLobbyReturnAt = 0
 	Hub.CoinFarm.bagCurrentValue = 0
 	Hub.CoinFarm.lastBagCount = 0
 	Hub.CoinFarm.bagMaximum = nil
@@ -4149,6 +5011,7 @@ Hub.CoinFarm.LeaveUnderSafely = function(arg, arg2)
 	if flag8 and humanoidRootPart and humanoidRootPart.Parent then
 		humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
 		humanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+		humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position)
 
 		pcall(function()
 			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
@@ -4202,6 +5065,7 @@ Hub.CoinFarm.OnRoundEnded = function()
 	else
 		Hub.CoinFarm.DisableUnder()
 	end
+	Hub.CoinFarm.ReleaseTravelNoclip(false)
 
 	Hub.CoinFarm.bagCurrentValue = nil
 	Hub.CoinFarm.lastBagCount = nil
@@ -4293,8 +5157,10 @@ Hub.CoinFarm.TouchCoin = function(arg, arg2, arg3, inFlight)
 	end
 
 	if not inFlight and Hub.CoinFarm.movementMode ~= "Continuous" and rootPart and character then
+		local isUnder = Hub.CoinFarm.position == "Under" or Hub.CoinFarm.escapeCoin == coinPart
 		rootPart.AssemblyLinearVelocity = Vector3.zero
-		rootPart.CFrame = CFrame.new(Hub.CoinFarm.GetTargetPosition(character, rootPart, coinPart, Hub.CoinFarm.escapeCoin == coinPart and "Under" or nil))
+		rootPart.AssemblyAngularVelocity = Vector3.zero
+		rootPart.CFrame = Hub.CoinFarm.GetTravelCFrame(Hub.CoinFarm.GetTargetPosition(character, rootPart, coinPart, Hub.CoinFarm.escapeCoin == coinPart and "Under" or nil), isUnder)
 	end
 
 	local head = character and character:FindFirstChild("Head") or rootPart
@@ -4312,6 +5178,11 @@ Hub.CoinFarm.TouchCoin = function(arg, arg2, arg3, inFlight)
 		end)
 	end
 
+	local touchTransmitter = coinPart:FindFirstChildOfClass("TouchTransmitter") or coinPart:FindFirstChild("TouchInterest")
+	if touchTransmitter and type(firetouchtransmitter) == "function" then
+		pcall(firetouchtransmitter, touchTransmitter)
+	end
+
 	return true
 end
 
@@ -4319,22 +5190,17 @@ Hub.CoinFarm.GetTargetPosition = function(arg, arg2, arg3, arg4)
 	if (arg4 or Hub.CoinFarm.position) ~= "Under" then
 		return arg3.Position
 	end
-	local head = arg:FindFirstChild("Head")
-	head = head and head:IsA("BasePart") and head or arg2
-	local n2 = head.Position.Y + head.Size.Y * 0.5 - arg2.Position.Y
-	local n3 = math.max(0, arg2.Size.Y * 0.5)
-	local n4 = math.clamp(n2, n3, math.max(5, n3))
 	local n5 = arg3.Position.Y - arg3.Size.Y * 0.5
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	raycastParams.FilterDescendantsInstances = { arg, arg3 }
 	local hit = workspace:Raycast(arg3.Position - Vector3.new(0, arg3.Size.Y * 0.5 + 0.05, 0), Vector3.new(0, -16, 0), raycastParams)
 
-	if hit then
+	if hit and hit.Position then
 		n5 = hit.Position.Y
 	end
 
-	return Vector3.new(arg3.Position.X, n5 - n4 - 1.5, arg3.Position.Z)
+	return Vector3.new(arg3.Position.X, n5 - 3.2, arg3.Position.Z)
 end
 
 Hub.CoinFarm.IsTravelValid = function(arg, arg2, arg3, arg4)
@@ -4364,6 +5230,25 @@ Hub.CoinFarm.PrecalculateNextCoin = function(fromPartOrPos, excludeCoin)
 	if #candidates == 0 then
 		return nil
 	end
+
+	if Hub.AvoidMurderer and Hub.AvoidMurderer.enabled then
+		local murdRoot = Hub.CoinFarm.GetMurdererRoot(pos)
+		if murdRoot then
+			local safeFloor = math.max(tonumber(Hub.AvoidMurderer.distance) or 35, 16) + 4
+			local safeCandidates = {}
+			for _, cand in ipairs(candidates) do
+				if (cand.coin.Position - murdRoot.Position).Magnitude > safeFloor then
+					table.insert(safeCandidates, cand)
+				end
+			end
+			if #safeCandidates > 0 then
+				candidates = safeCandidates
+			elseif os.clock() < (Hub.CoinFarm.evasionGraceUntil or 0) then
+				return nil
+			end
+		end
+	end
+
 	if #candidates == 1 then
 		return candidates[1].coin
 	end
@@ -4428,15 +5313,42 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 		Hub.CoinFarm.nextCoin = Hub.CoinFarm.PrecalculateNextCoin(arg3, arg3)
 	end
 
+	local hum = arg and arg:FindFirstChildOfClass("Humanoid")
+
+	local function finishTravel(ok, timedOut)
+		if arg2 and arg2.Parent then
+			arg2.AssemblyLinearVelocity = Vector3.zero
+			arg2.AssemblyAngularVelocity = Vector3.zero
+		end
+		if str == "Under" then
+			Hub.CoinFarm.ReleaseTravelNoclip(false)
+			Hub.CoinFarm.EnableUnder(arg, ok, escapeUnderActive)
+		elseif ok then
+			Hub.CoinFarm.EnforceTravelNoclip(arg)
+		else
+			if timedOut and arg3 then
+				Hub.CoinFarm.retryUntil[arg3] = os.clock() + 3.0
+			end
+			if not Hub.CoinFarm.enabled or not Hub.RoundState.active or not arg or not arg.Parent or (hum and hum.Health <= 0) then
+				Hub.CoinFarm.ReleaseTravelNoclip(true)
+			end
+			if mode ~= "Tween" then
+				Hub.CoinFarm.DisableUnder()
+			end
+		end
+		return ok
+	end
+
 	if str == "Under" or mode == "Tween" then
 		Hub.CoinFarm.EnableUnder(arg, false, escapeUnderActive)
 	else
-		Hub.CoinFarm.DisableUnder()
+		Hub.CoinFarm.EnforceTravelNoclip(arg)
 	end
 
 	if mode == "Tween" then
 		Hub.CoinFarm.CancelTween()
-		local tween = TweenService:Create(arg2, TweenInfo.new(n2, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = CFrame.new(v8) })
+		local targetCF = Hub.CoinFarm.GetTravelCFrame(v8, str == "Under")
+		local tween = TweenService:Create(arg2, TweenInfo.new(n2, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), { CFrame = targetCF })
 		Hub.CoinFarm.activeTween = tween
 		tween:Play()
 
@@ -4494,66 +5406,69 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 	local now = os.clock()
 	local v9 = now
 
+	local curPos = arg2.Position
+	local maxDeadline = now + math.max(n2, 0.25) + 3.0
 	while Hub.CoinFarm.IsTravelValid(arg2, arg3, mode, position) and not Hub.CoinFarm.bagFull do
 		local now2 = os.clock()
-		local n3 = math.clamp((now2 - now) / n2, 0, 1)
+		if now2 > maxDeadline then
+			return finishTravel(false, true)
+		end
 
 		if str == "Under" then
 			Hub.CoinFarm.EnableUnder(arg, false, escapeUnderActive)
+		else
+			Hub.CoinFarm.EnforceTravelNoclip(arg)
 		end
 
 		local v10 = Hub.CoinFarm.GetNearbyMurderer(arg2)
 		if v10 and Hub.CoinFarm.EscapeMurderer(arg2, v10) then
 			Hub.CoinFarm.nextCoin = nil
-			return false
+			return finishTravel(false)
+		end
+		if (arg2.Position - curPos).Magnitude > 4 then
+			curPos = arg2.Position
 		end
 		arg2.AssemblyLinearVelocity = Vector3.zero
 		arg2.AssemblyAngularVelocity = Vector3.zero
-		local n4 = position2:Lerp(v8, n3)
-		local n5 = math.max(3, speed * math.min(now2 - v9, 0.12) * 1.35)
-		local n6 = n4 - arg2.Position
+		local dt = math.clamp(now2 - v9, 1 / 240, 1 / 30)
+		local maxStep = speed * dt
+		local toTarget = v8 - curPos
+		local rem = toTarget.Magnitude
+		local arrived = rem <= maxStep
+		curPos = arrived and v8 or (curPos + toTarget.Unit * maxStep)
 
-		if n5 < n6.Magnitude then
-			n4 = arg2.Position + n6.Unit * n5
+		arg2.CFrame = Hub.CoinFarm.GetTravelCFrame(curPos, str == "Under")
+		arg2.AssemblyLinearVelocity = Vector3.zero
+		arg2.AssemblyAngularVelocity = Vector3.zero
+
+		if Hub.CoinFarm.movementMode == "Continuous" and (v8 - arg2.Position).Magnitude <= 4.0 then
+			Hub.CoinFarm.TouchCoin(arg, arg2, arg3, true)
+			Hub.CoinFarm.retryUntil[arg3] = os.clock() + 2.0
+			return finishTravel(true)
 		end
 
-		arg2.CFrame = CFrame.new(n4)
-
-		if Hub.CoinFarm.movementMode == "Continuous" then
-			local dist = (v8 - arg2.Position).Magnitude
-			if dist <= 4.0 then
-				Hub.CoinFarm.TouchCoin(arg, arg2, arg3, true)
-				Hub.CoinFarm.retryUntil[arg3] = os.clock() + 2.0
-				if str == "Under" then
-					Hub.CoinFarm.EnableUnder(arg, true, escapeUnderActive)
-				end
-				return true
-			end
-		end
-
-		if n3 >= 1 then
-			if str == "Under" then
-				Hub.CoinFarm.EnableUnder(arg, true, escapeUnderActive)
-			end
-
-			return true
+		if arrived then
+			return finishTravel(true)
 		end
 
 		RunService.Heartbeat:Wait()
 		v9 = now2
 	end
-
-	return false
+	return finishTravel(false)
 end
 
 Hub.CoinFarm.LobbyFarmCycle = function(self)
 	local coinFarm = Hub.CoinFarm
+	if coinFarm.endRoundRunning or coinFarm.xpWaitRunning then
+		return false
+	end
 	local character = localPlayer and localPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 
 	if not character or not humanoid or humanoid.Health <= 0 or not rootPart then
 		coinFarm.CancelTween()
+		coinFarm.ReleaseTravelNoclip(false)
 		coinFarm.DisableUnder()
 		coinFarm.currentCoin = nil
 		coinFarm.SetPhase("Waiting for respawn")
@@ -4564,16 +5479,40 @@ Hub.CoinFarm.LobbyFarmCycle = function(self)
 
 	local lobbyCF = Hub.GetLobbyCFrame()
 
+	local function setCharCanTouch(state)
+		if not character or not character.Parent then
+			return
+		end
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanTouch = state
+			end
+		end
+	end
+
+	local function returnToLobby()
+		setCharCanTouch(false)
+		coinFarm.DisableUnder()
+		coinFarm.ReleaseTravelNoclip(true)
+		if humanoid and humanoid.Parent then
+			humanoid.PlatformStand = false
+		end
+		local cf = Hub.GetLobbyCFrame() or lobbyCF
+		if cf and rootPart and rootPart.Parent then
+			coinFarm:Teleport(cf)
+			rootPart.AssemblyLinearVelocity = Vector3.zero
+			rootPart.AssemblyAngularVelocity = Vector3.zero
+		end
+		setCharCanTouch(true)
+		Hub.inLobby = true
+	end
+
 	if not coinFarm.bagFull then
 		coinFarm.CheckBagFullGui()
 	end
 	if coinFarm.bagFull then
-		if not Hub.inLobby and lobbyCF then
-			coinFarm:Teleport(lobbyCF)
-			Hub.inLobby = true
-		end
 		coinFarm.CancelTween()
-		coinFarm.DisableUnder()
+		returnToLobby()
 		coinFarm.currentCoin = nil
 		local xpHandled = type(coinFarm.StartXPFarmWait) == "function" and coinFarm.StartXPFarmWait()
 		if not xpHandled then
@@ -4587,48 +5526,199 @@ Hub.CoinFarm.LobbyFarmCycle = function(self)
 		return false
 	end
 
+	if not coinFarm.IsLocalPlayerInRound() then
+		coinFarm.ReleaseTravelNoclip(false)
+		coinFarm.DisableUnder()
+		if humanoid.PlatformStand then
+			humanoid.PlatformStand = false
+		end
+		Hub.inLobby = true
+		coinFarm.SetPhase("Waiting for round")
+		return false
+	end
+
+	if not lobbyCF then
+		coinFarm.SetPhase("Waiting for lobby")
+		return false
+	end
+
+	if not Hub.inLobby or (rootPart.Position - lobbyCF.Position).Magnitude > 35 then
+		coinFarm.SetPhase("ToLobby")
+		returnToLobby()
+		coinFarm.lastLobbyReturnAt = os.clock()
+	end
+
 	if not coinFarm.IndexMap() then
 		coinFarm.SetPhase("Waiting for map")
 		return false
 	end
 
-	local murdererRoot = (typeof(coinFarm.GetMurdererRoot) == "function" and coinFarm.GetMurdererRoot())
-		or (typeof(coinFarm.GetNearbyMurderer) == "function" and coinFarm.GetNearbyMurderer(rootPart))
-	if murdererRoot and (murdererRoot.Position - rootPart.Position).Magnitude < (coinFarm.murdererNearRange or 30) then
-		if typeof(coinFarm.EscapeMurderer) == "function" then
-			coinFarm.EscapeMurderer(character, murdererRoot)
+	local role = coinFarm.GetCachedRole(localPlayer)
+	if not coinFarm.sheriffFlingCompleted and (role == "Murderer" or role == "Innocent") then
+		coinFarm.StartRoundSheriffFling()
+		if coinFarm.sheriffFlingRunning or coinFarm.sheriffFlingBlocking then
+			return false
+		end
+	end
+
+	local function canKeepRunning()
+		return coinFarm.enabled
+			and coinFarm.lobbyFarmEnabled
+			and Hub.RoundState.active
+			and not coinFarm.bagFull
+			and not coinFarm.endRoundRunning
+			and not coinFarm.xpWaitRunning
+			and character.Parent ~= nil
+			and rootPart.Parent ~= nil
+			and humanoid.Health > 0
+			and coinFarm.IsLocalPlayerInRound()
+	end
+
+	local lobbyDelay = 1.35
+	local waitUntil = (coinFarm.lastLobbyReturnAt or 0) + lobbyDelay
+	if os.clock() < waitUntil then
+		coinFarm.SetPhase("ToLobby")
+		while canKeepRunning() and os.clock() < waitUntil do
+			if not coinFarm.bagFull then
+				coinFarm.CheckBagFullGui()
+			end
+			if coinFarm.bagFull then
+				break
+			end
+			task.wait(0.05)
+		end
+		if not canKeepRunning() or coinFarm.bagFull then
+			return false
+		end
+	end
+
+	local function isCoinNearMurderer(cPos)
+		if typeof(coinFarm.GetMurdererPositions) == "function" then
+			for _, mPos in ipairs(coinFarm.GetMurdererPositions()) do
+				if (mPos - cPos).Magnitude < 24 then
+					return true
+				end
+			end
+		end
+		local mRoot = (typeof(coinFarm.GetMurdererRoot) == "function" and coinFarm.GetMurdererRoot(cPos))
+			or (typeof(coinFarm.GetNearbyMurderer) == "function" and coinFarm.GetNearbyMurderer(rootPart))
+		if mRoot and (mRoot.Position - cPos).Magnitude < 24 then
+			return true
 		end
 		return false
 	end
 
+	local refPos = coinFarm.lastLobbyCoinPos or rootPart
 	local targetCoin = coinFarm.currentCoin
 	if not targetCoin or not targetCoin.Parent or not coinFarm.coins[targetCoin] or not coinFarm.IsCoinAvailable(targetCoin) then
-		targetCoin = coinFarm.GetNearestCoin(rootPart)
+		targetCoin = coinFarm.GetNearestCoin(refPos)
 		coinFarm.currentCoin = targetCoin
 	end
 
-	if not targetCoin or not targetCoin.Parent then
+	local pickAttempts = 0
+	while targetCoin and targetCoin.Parent and isCoinNearMurderer(targetCoin.Position) and pickAttempts < 6 do
+		pickAttempts += 1
+		coinFarm.retryUntil[targetCoin] = os.clock() + 2.0
+		coinFarm.currentCoin = nil
+		targetCoin = coinFarm.GetNearestCoin(refPos)
+		coinFarm.currentCoin = targetCoin
+	end
+
+	if not targetCoin or not targetCoin.Parent or not coinFarm.IsCoinAvailable(targetCoin) then
+		coinFarm.currentCoin = nil
 		coinFarm.SetPhase("Waiting for coin")
 		return false
 	end
 
 	coinFarm.ranThisRound = true
+	local coinPos = targetCoin.Position
+	local coinCF = CFrame.new(coinPos)
+
+	setCharCanTouch(false)
+	pcall(function()
+		targetCoin.CanTouch = false
+	end)
+	coinFarm.EnforceTravelNoclip(character)
+	humanoid.PlatformStand = true
 	coinFarm.SetPhase("ToCoin")
-
-	local coinCF = targetCoin.CFrame
-	coinFarm:Teleport(coinCF)
 	Hub.inLobby = false
+	coinFarm:Teleport(coinCF)
 
-	coinFarm:TouchCoin(targetCoin)
-
-	coinFarm.SetPhase("ToLobby")
-	if lobbyCF then
-		coinFarm:Teleport(lobbyCF)
-		Hub.inLobby = true
+	local settleEnd = os.clock() + 0.48
+	local settleFrames = 0
+	while canKeepRunning() and os.clock() < settleEnd and settleFrames < 32 and targetCoin.Parent and coinFarm.IsCoinAvailable(targetCoin) do
+		settleFrames += 1
+		coinFarm.CheckBagFullGui()
+		if coinFarm.bagFull or isCoinNearMurderer(coinPos) then
+			break
+		end
+		humanoid.PlatformStand = true
+		rootPart.AssemblyLinearVelocity = Vector3.zero
+		rootPart.AssemblyAngularVelocity = Vector3.zero
+		rootPart.CFrame = coinCF
+		RunService.Heartbeat:Wait()
 	end
 
-	coinFarm.totalCollected = (coinFarm.totalCollected or 0) + 1
-	coinFarm.currentCoin = nil
+	if canKeepRunning() and not coinFarm.bagFull and targetCoin.Parent and coinFarm.IsCoinAvailable(targetCoin) and not isCoinNearMurderer(coinPos) then
+		coinFarm.SetPhase("TouchCoin")
+		pcall(function()
+			rootPart.CanTouch = true
+			targetCoin.CanTouch = true
+		end)
+		coinFarm.TouchCoin(character, rootPart, targetCoin, true)
+		local waitEnd = os.clock() + 0.45
+		local waitFrames = 0
+		local retouched = false
+		local touchStart = os.clock()
+		while canKeepRunning() and os.clock() < waitEnd and waitFrames < 30 and targetCoin.Parent and coinFarm.IsCoinAvailable(targetCoin) do
+			waitFrames += 1
+			coinFarm.CheckBagFullGui()
+			if coinFarm.bagFull or isCoinNearMurderer(rootPart.Position) then
+				break
+			end
+			humanoid.PlatformStand = true
+			rootPart.AssemblyLinearVelocity = Vector3.zero
+			rootPart.AssemblyAngularVelocity = Vector3.zero
+			rootPart.CFrame = coinCF
+			if not retouched and (os.clock() - touchStart >= 0.2 or waitFrames >= 12) then
+				retouched = true
+				coinFarm.TouchCoin(character, rootPart, targetCoin, true)
+			end
+			RunService.Heartbeat:Wait()
+		end
+	end
+
+	setCharCanTouch(false)
+	if targetCoin and targetCoin.Parent then
+		pcall(function()
+			targetCoin.CanTouch = false
+		end)
+	end
+	if rootPart.Parent then
+		for _ = 1, 2 do
+			rootPart.AssemblyLinearVelocity = Vector3.zero
+			rootPart.AssemblyAngularVelocity = Vector3.zero
+			rootPart.CFrame = coinCF
+			RunService.Heartbeat:Wait()
+		end
+	end
+
+	if not targetCoin.Parent or not coinFarm.IsCoinAvailable(targetCoin) then
+		coinFarm.lastLobbyCoinPos = coinPos
+		coinFarm.MarkCurrentCollected()
+	else
+		if targetCoin.Parent then
+			pcall(function()
+				targetCoin.CanTouch = true
+			end)
+		end
+		coinFarm.retryUntil[targetCoin] = os.clock() + 2.0
+		coinFarm.currentCoin = nil
+	end
+
+	coinFarm.SetPhase("ToLobby")
+	returnToLobby()
+	coinFarm.lastLobbyReturnAt = os.clock()
 	coinFarm.RefreshStats()
 
 	return true
@@ -4661,8 +5751,9 @@ Hub.CoinFarm.Worker = function()
 				local v11, flag17, startedAt, flag18, sheriffFlingRunning
 
 				if Hub.CoinFarm.lobbyFarmEnabled then
-					Hub.CoinFarm:LobbyFarmCycle()
-					task.wait(0.1)
+					if not Hub.CoinFarm:LobbyFarmCycle() then
+						task.wait(0.1)
+					end
 				elseif not Hub.RoundState.coinsReady then
 					Hub.CoinFarm.IndexMap()
 
@@ -4681,7 +5772,7 @@ Hub.CoinFarm.Worker = function()
 						break
 					else
 						v11 = Hub.CoinFarm.GetCachedRole(localPlayer)
-						flag17 = Hub.CoinFarm.endRoundEnabled and v11 == nil
+						flag17 = (Hub.CoinFarm.endRoundEnabled or not Hub.CoinFarm.sheriffFlingCompleted) and v11 == nil
 
 						if flag17 then
 							startedAt = Hub.RoundState.startedAt
@@ -4692,7 +5783,7 @@ Hub.CoinFarm.Worker = function()
 							exitTo = 16
 							break
 						else
-							flag18 = Hub.CoinFarm.endRoundEnabled and not Hub.CoinFarm.sheriffFlingCompleted and (v11 == "Murderer" or v11 == "Innocent")
+							flag18 = not Hub.CoinFarm.sheriffFlingCompleted and not Hub.CoinFarm.bagFull and (v11 == "Murderer" or v11 == "Innocent")
 
 							if flag18 then
 								Hub.CoinFarm.StartRoundSheriffFling()
@@ -5089,7 +6180,7 @@ Hub.CoinFarm.Worker = function()
 					break
 				else
 					v11 = Hub.CoinFarm.GetCachedRole(localPlayer)
-					flag17 = Hub.CoinFarm.endRoundEnabled and v11 == nil
+					flag17 = (Hub.CoinFarm.endRoundEnabled or not Hub.CoinFarm.sheriffFlingCompleted) and v11 == nil
 
 					if flag17 then
 						startedAt = Hub.RoundState.startedAt
@@ -5100,7 +6191,7 @@ Hub.CoinFarm.Worker = function()
 						exitTo = 5
 						break
 					else
-						flag18 = Hub.CoinFarm.endRoundEnabled and not Hub.CoinFarm.sheriffFlingCompleted and (v11 == "Murderer" or v11 == "Innocent")
+						flag18 = not Hub.CoinFarm.sheriffFlingCompleted and not Hub.CoinFarm.bagFull and (v11 == "Murderer" or v11 == "Innocent")
 
 						if flag18 then
 							Hub.CoinFarm.StartRoundSheriffFling()
@@ -5256,12 +6347,14 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 1 then
+			Hub.CoinFarm.ReleaseTravelNoclip(false)
 			task.wait(0.2)
 			continue
 		end
 
 		if exitTo == 2 then
 			Hub.CoinFarm.CancelTween()
+			Hub.CoinFarm.ReleaseTravelNoclip(true)
 			Hub.CoinFarm.DisableUnder()
 			Hub.CoinFarm.currentCoin = nil
 			task.wait(0.1)
@@ -5270,6 +6363,7 @@ Hub.CoinFarm.Worker = function()
 
 		if exitTo == 3 then
 			Hub.CoinFarm.CancelTween()
+			Hub.CoinFarm.ReleaseTravelNoclip(false)
 			Hub.CoinFarm.DisableUnder()
 			local serverHopLowPlayers = Hub.CoinFarm.serverHopLowPlayers
 
@@ -5290,6 +6384,7 @@ Hub.CoinFarm.Worker = function()
 
 		if exitTo == 4 then
 			Hub.CoinFarm.CancelTween()
+			Hub.CoinFarm.ReleaseTravelNoclip(false)
 			Hub.CoinFarm.DisableUnder()
 			Hub.CoinFarm.currentCoin = nil
 			Hub.CoinFarm.SetPhase("Waiting for round")
@@ -5298,7 +6393,9 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 5 then
-			Hub.CoinFarm.SetPhase("Waiting for role")
+			if not Hub.CoinFarm.MaintainPreCoinHover("Waiting for role") then
+				Hub.CoinFarm.SetPhase("Waiting for role")
+			end
 			task.wait(0.1)
 			continue
 		end
@@ -5522,6 +6619,7 @@ Hub.CoinFarm.Worker = function()
 		if exitTo == 8 then
 			Hub.CoinFarm.CancelTween()
 			Hub.CoinFarm.LeaveUnderSafely(nil, true)
+			Hub.CoinFarm.ReleaseTravelNoclip(true)
 			Hub.CoinFarm.currentCoin = nil
 			flag9 = type(Hub.CoinFarm.StartXPFarmWait) == "function" and Hub.CoinFarm.StartXPFarmWait()
 
@@ -5539,7 +6637,9 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 9 then
-			Hub.CoinFarm.SetPhase("Waiting for map")
+			if not Hub.CoinFarm.MaintainPreCoinHover("Waiting for map") then
+				Hub.CoinFarm.SetPhase("Waiting for map")
+			end
 			task.wait(0.2)
 			continue
 		end
@@ -5561,8 +6661,30 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 11 then
-			Hub.CoinFarm.DisableUnder()
-			Hub.CoinFarm.SetPhase("Waiting for coin")
+			if not Hub.CoinFarm.bagFull then
+				Hub.CoinFarm.CheckBagFullGui()
+			end
+			if Hub.CoinFarm.bagFull then
+				Hub.CoinFarm.CancelTween()
+				Hub.CoinFarm.LeaveUnderSafely(nil, true)
+				Hub.CoinFarm.ReleaseTravelNoclip(true)
+				Hub.CoinFarm.currentCoin = nil
+				if not (type(Hub.CoinFarm.StartXPFarmWait) == "function" and Hub.CoinFarm.StartXPFarmWait()) then
+					if Hub.CoinFarm.endRoundEnabled then
+						Hub.CoinFarm.SetPhase("Coin bag full")
+						Hub.CoinFarm.StartEndRoundAction()
+					else
+						Hub.CoinFarm.ResetAfterBagFull()
+					end
+				end
+				task.wait(0.2)
+				continue
+			end
+			if not Hub.CoinFarm.MaintainPreCoinHover("Waiting for coin") then
+				Hub.CoinFarm.ReleaseTravelNoclip(true)
+				Hub.CoinFarm.DisableUnder()
+				Hub.CoinFarm.SetPhase("Waiting for coin")
+			end
 			task.wait(0.15)
 			continue
 		end
@@ -5572,6 +6694,7 @@ Hub.CoinFarm.Worker = function()
 			if flag14 then
 				continue
 			end
+			Hub.CoinFarm.preCoinHoverActive = false
 			flag15 = Hub.CoinFarm.position == "Under"
 			v9 = flag15 or flag7
 
@@ -5641,23 +6764,46 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 14 then
-			local character_2 = localPlayer.Character
-			character_2 = character_2 and character_2:FindFirstChild("HumanoidRootPart")
-			local v11 = Hub.CoinFarm.GetNearbyMurderer(character_2)
-
-			if v11 then
-				Hub.CoinFarm.EscapeMurderer(character_2, v11)
+			if not Hub.CoinFarm.bagFull then
+				Hub.CoinFarm.CheckBagFullGui()
 			end
+			if Hub.CoinFarm.bagFull then
+				Hub.CoinFarm.CancelTween()
+				Hub.CoinFarm.LeaveUnderSafely(nil, true)
+				Hub.CoinFarm.ReleaseTravelNoclip(true)
+				Hub.CoinFarm.currentCoin = nil
+				if not (type(Hub.CoinFarm.StartXPFarmWait) == "function" and Hub.CoinFarm.StartXPFarmWait()) then
+					if Hub.CoinFarm.endRoundEnabled then
+						Hub.CoinFarm.SetPhase("Coin bag full")
+						Hub.CoinFarm.StartEndRoundAction()
+					else
+						Hub.CoinFarm.ResetAfterBagFull()
+					end
+				end
+				task.wait(0.2)
+				continue
+			end
+			if not Hub.CoinFarm.MaintainPreCoinHover("Waiting for coins") then
+				local character_2 = localPlayer.Character
+				character_2 = character_2 and character_2:FindFirstChild("HumanoidRootPart")
+				local v11 = Hub.CoinFarm.GetNearbyMurderer(character_2)
 
-			Hub.CoinFarm.CancelTween()
-			Hub.CoinFarm.DisableUnder()
-			Hub.CoinFarm.SetPhase("Waiting for coins")
+				if v11 then
+					Hub.CoinFarm.EscapeMurderer(character_2, v11)
+				end
+
+				Hub.CoinFarm.CancelTween()
+				Hub.CoinFarm.ReleaseTravelNoclip(true)
+				Hub.CoinFarm.DisableUnder()
+				Hub.CoinFarm.SetPhase("Waiting for coins")
+			end
 			task.wait(0.2)
 			continue
 		end
 
 		if exitTo == 15 then
 			Hub.CoinFarm.CancelTween()
+			Hub.CoinFarm.ReleaseTravelNoclip(false)
 			Hub.CoinFarm.DisableUnder()
 			Hub.CoinFarm.currentCoin = nil
 			Hub.CoinFarm.SetPhase("Waiting for round")
@@ -5666,7 +6812,9 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 16 then
-			Hub.CoinFarm.SetPhase("Waiting for role")
+			if not Hub.CoinFarm.MaintainPreCoinHover("Waiting for role") then
+				Hub.CoinFarm.SetPhase("Waiting for role")
+			end
 			task.wait(0.1)
 			continue
 		end
@@ -5674,6 +6822,7 @@ Hub.CoinFarm.Worker = function()
 		if exitTo == 17 then
 			Hub.CoinFarm.CancelTween()
 			Hub.CoinFarm.LeaveUnderSafely(nil, true)
+			Hub.CoinFarm.ReleaseTravelNoclip(true)
 			Hub.CoinFarm.currentCoin = nil
 			flag9 = type(Hub.CoinFarm.StartXPFarmWait) == "function" and Hub.CoinFarm.StartXPFarmWait()
 
@@ -5691,7 +6840,9 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 18 then
-			Hub.CoinFarm.SetPhase("Waiting for map")
+			if not Hub.CoinFarm.MaintainPreCoinHover("Waiting for map") then
+				Hub.CoinFarm.SetPhase("Waiting for map")
+			end
 			task.wait(0.2)
 			continue
 		end
@@ -5705,6 +6856,7 @@ Hub.CoinFarm.Worker = function()
 			end
 
 			Hub.CoinFarm.CancelTween()
+			Hub.CoinFarm.ReleaseTravelNoclip(false)
 			Hub.CoinFarm.DisableUnder()
 			Hub.CoinFarm.currentCoin = nil
 			Hub.CoinFarm.SetPhase("Waiting for respawn")
@@ -5713,8 +6865,30 @@ Hub.CoinFarm.Worker = function()
 		end
 
 		if exitTo == 20 then
-			Hub.CoinFarm.DisableUnder()
-			Hub.CoinFarm.SetPhase("Waiting for coin")
+			if not Hub.CoinFarm.bagFull then
+				Hub.CoinFarm.CheckBagFullGui()
+			end
+			if Hub.CoinFarm.bagFull then
+				Hub.CoinFarm.CancelTween()
+				Hub.CoinFarm.LeaveUnderSafely(nil, true)
+				Hub.CoinFarm.ReleaseTravelNoclip(true)
+				Hub.CoinFarm.currentCoin = nil
+				if not (type(Hub.CoinFarm.StartXPFarmWait) == "function" and Hub.CoinFarm.StartXPFarmWait()) then
+					if Hub.CoinFarm.endRoundEnabled then
+						Hub.CoinFarm.SetPhase("Coin bag full")
+						Hub.CoinFarm.StartEndRoundAction()
+					else
+						Hub.CoinFarm.ResetAfterBagFull()
+					end
+				end
+				task.wait(0.2)
+				continue
+			end
+			if not Hub.CoinFarm.MaintainPreCoinHover("Waiting for coin") then
+				Hub.CoinFarm.ReleaseTravelNoclip(true)
+				Hub.CoinFarm.DisableUnder()
+				Hub.CoinFarm.SetPhase("Waiting for coin")
+			end
 			task.wait(0.15)
 			continue
 		end
@@ -5724,6 +6898,7 @@ Hub.CoinFarm.Worker = function()
 			if flag14 then
 				continue
 			end
+			Hub.CoinFarm.preCoinHoverActive = false
 			flag15 = Hub.CoinFarm.position == "Under"
 			v9 = flag15 or flag7
 
@@ -5794,6 +6969,7 @@ Hub.CoinFarm.Worker = function()
 
 		if exitTo == 23 then
 			Hub.CoinFarm.CancelTween()
+			Hub.CoinFarm.ReleaseTravelNoclip(true)
 			Hub.CoinFarm.DisableUnder()
 			Hub.CoinFarm.currentCoin = nil
 			task.wait(0.1)
@@ -5803,6 +6979,15 @@ Hub.CoinFarm.Worker = function()
 		break
 	end
 
+	if Hub.CoinFarm.lobbyFarmEnabled then
+		Hub.CoinFarm.DisableUnder()
+		local char = localPlayer and localPlayer.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum.PlatformStand = false
+		end
+	end
+	Hub.CoinFarm.ReleaseTravelNoclip(true)
 	Hub.CoinFarm.workerRunning = false
 end
 
@@ -6567,7 +7752,9 @@ Hub.CoinFarm.SetEnabled = function(arg)
 			else
 				Hub.CoinFarm.LeaveUnderSafely(indexedMap, false)
 			end
+			Hub.CoinFarm.ReleaseTravelNoclip(true)
 		else
+			Hub.CoinFarm.ReleaseTravelNoclip(false)
 			Hub.CoinFarm.DisableUnder()
 		end
 
@@ -6578,15 +7765,25 @@ Hub.CoinFarm.SetEnabled = function(arg)
 
 	Hub.CoinFarm.UnequipWeapons()
 
-	if Hub.RoundState.active and Hub.RoundState.coinsReady then
+	if Hub.RoundState.active then
 		Hub.CoinFarm.IndexMap()
-	else
-		Hub.CoinFarm.SetPhase("Waiting for round")
+		if not Hub.RoundState.coinsReady then
+			for k in pairs(Hub.CoinFarm.coins) do
+				if Hub.CoinFarm.IsCoinAvailable(k) then
+					Hub.RoundState.coinsReady = true
+					break
+				end
+			end
+		end
+	end
+
+	if not Hub.RoundState.active or not Hub.RoundState.coinsReady then
+		Hub.CoinFarm.SetPhase(Hub.RoundState.active and "Waiting for coins" or "Waiting for round")
 	end
 
 	Hub.CoinFarm.SetBlackScreen(Hub.CoinFarm.blackScreenEnabled, true)
 
-	if Hub.RoundState.active and Hub.CoinFarm.endRoundEnabled then
+	if Hub.RoundState.active then
 		Hub.CoinFarm.StartRoundSheriffFling()
 	end
 
@@ -6622,6 +7819,7 @@ Hub.CoinFarm.Destroy = function()
 	Hub.CoinFarm.sheriffFlingBlocking = false
 	Hub.CoinFarm.sheriffFlingCompleted = false
 	Hub.CoinFarm.CancelTween()
+	Hub.CoinFarm.ReleaseTravelNoclip(false)
 	Hub.CoinFarm.DisableUnder()
 	Hub.CoinFarm.RestoreCoinVisuals()
 	if not Hub.CoinFarm.blackScreenEnabled then
@@ -6671,7 +7869,7 @@ Hub.CoinFarm.ApplyResume = function()
 	Hub.CoinFarm.totalEarnedXP = math.max(0, math.floor(tonumber(v8.totalXP) or 0))
 	Hub.CoinFarm.resumedSessionElapsed = math.max(0, tonumber(v8.sessionElapsed) or 0)
 	Hub.CoinFarm.serverHopCount = math.max(0, math.floor(tonumber(v8.serverHopCount) or 0))
-	Hub.CoinFarm.mode = v8.mode == "Tween" and "Tween" or "CFrame"
+	Hub.CoinFarm.mode = v8.mode == "Tween" and "Tween" or ((v8.mode == "Lobby" or v8.lobbyFarm == true) and "Lobby" or "CFrame")
 	Hub.CoinFarm.position = v8.position == "Under" and "Under" or "Normal"
 	if type(v8.movementMode) == "string" then
 		Hub.CoinFarm.movementMode = v8.movementMode == "Continuous" and "Continuous" or "Stop and Go"
@@ -7005,10 +8203,14 @@ do
 	local function fn12()
 		if type(request) == "function" then
 			return request
-		end
-
-		if type(http_request) == "function" then
+		elseif type(http_request) == "function" then
 			return http_request
+		elseif type(syn) == "table" and type(syn.request) == "function" then
+			return syn.request
+		elseif type(http) == "table" and type(http.request) == "function" then
+			return http.request
+		elseif type(fluxus) == "table" and type(fluxus.request) == "function" then
+			return fluxus.request
 		end
 
 		return nil
@@ -7221,7 +8423,11 @@ createScreenGui = function()
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.DisplayOrder = 999999
 
-	screenGui.Parent = getSafeGuiParent()
+	if not pcall(function()
+		screenGui.Parent = getSafeGuiParent()
+	end) or not screenGui.Parent then
+		screenGui.Parent = localPlayer:FindFirstChildOfClass("PlayerGui") or localPlayer:WaitForChild("PlayerGui")
+	end
 	v8 = screenGui
 	return screenGui
 end
@@ -7499,6 +8705,13 @@ do
 			local ok, result = pcall(function()
 				if not crosshair.iconModule then
 					crosshair.iconModule = Hub.TouchButtons and Hub.TouchButtons.iconModule
+				end
+
+				if not crosshair.iconModule then
+					local wuiIcons = WindUI and WindUI.Creator and WindUI.Creator.Icons
+					if type(wuiIcons) == "table" and type(wuiIcons.Icon2) == "function" then
+						crosshair.iconModule = wuiIcons
+					end
 				end
 
 				if not crosshair.iconModule then
@@ -7891,21 +9104,28 @@ do
 		end
 	end))
 
-	local hasDrawingImmediate = type(DrawingImmediate) == "table" and type(DrawingImmediate.GetPaint) == "function"
+	local hasDrawingImmediate = type(DrawingImmediate) == "table" and type(DrawingImmediate.GetPaint) == "function" and type(DrawingImmediate.Line) == "function"
 	local hasDrawing = type(Drawing) == "table" and type(Drawing.new) == "function"
 
 	local immediateLines = {}
 	if hasDrawingImmediate then
-		DrawingImmediate.GetPaint(15):Connect(function()
-			if not foxnameMM2Runtime.alive or isTerminated then
-				return
-			end
-			for lineData in pairs(immediateLines) do
-				if lineData.Visible then
-					DrawingImmediate.Line(lineData.From, lineData.To, lineData.Color, 1, lineData.Thickness)
+		local okPaint = pcall(function()
+			local paintSignal = DrawingImmediate.GetPaint(15)
+			assert(paintSignal and type(paintSignal.Connect) == "function")
+			paintSignal:Connect(function()
+				if not foxnameMM2Runtime.alive or isTerminated then
+					return
 				end
-			end
+				for lineData in pairs(immediateLines) do
+					if lineData.Visible then
+						DrawingImmediate.Line(lineData.From, lineData.To, lineData.Color, 1, lineData.Thickness)
+					end
+				end
+			end)
 		end)
+		if not okPaint then
+			hasDrawingImmediate = false
+		end
 	end
 
 	local function createFrame(arg)
@@ -8047,15 +9267,10 @@ do
 
 		Hub.NoclipNextRefresh = 0
 
-		Hub.NoclipStepConn = RunService.Heartbeat:Connect(function()
+		Hub.NoclipStepConn = RunService.Stepped:Connect(function()
 			if not Hub.NoclipEnabled then
 				return
 			end
-			local now = tick()
-			if now < Hub.NoclipNextRefresh then
-				return
-			end
-			Hub.NoclipNextRefresh = now + 0.2
 			local character_2 = localPlayer.Character
 			if not character_2 then
 				return
@@ -8237,7 +9452,9 @@ do
 		end
 
 		local fallenPartsDestroyHeight = workspace.FallenPartsDestroyHeight
-		workspace.FallenPartsDestroyHeight = (0/0)
+		pcall(function()
+			workspace.FallenPartsDestroyHeight = (0/0)
+		end)
 		local bodyVelocity = Instance.new("BodyVelocity")
 		bodyVelocity.Parent = rootPart
 		bodyVelocity.Velocity = Vector3.zero
@@ -8252,7 +9469,9 @@ do
 			if not accessory then
 				bodyVelocity:Destroy()
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-				workspace.FallenPartsDestroyHeight = fallenPartsDestroyHeight
+				pcall(function()
+					workspace.FallenPartsDestroyHeight = fallenPartsDestroyHeight
+				end)
 				return
 			end
 
@@ -8293,7 +9512,9 @@ do
 			end
 		end
 
-		workspace.FallenPartsDestroyHeight = fallenPartsDestroyHeight
+		pcall(function()
+			workspace.FallenPartsDestroyHeight = fallenPartsDestroyHeight
+		end)
 	end
 
 	local function fn40(arg)
@@ -8831,36 +10052,46 @@ do
 		return part
 	end
 
-	fn23 = function()
-		local character_ = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-
-		if character_ then
-			character_ = character_:FindFirstChild("HumanoidRootPart") or character_:WaitForChild("HumanoidRootPart", 5)
+	local function placeAtSafezone(char, root, targetCF)
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+		if char then
+			char:PivotTo(targetCF)
 		end
+		root.CFrame = targetCF
+	end
 
-		if not character_ then
+	Hub.CoinFarm.TeleportToSafezone = function(waitForChar, snapBack)
+		local character = localPlayer.Character
+		if not character and waitForChar then
+			character = localPlayer.CharacterAdded:Wait()
+		end
+		local hrp = character and (character:FindFirstChild("HumanoidRootPart") or (waitForChar and character:WaitForChild("HumanoidRootPart", 5)))
+		if not hrp then
 			return false
 		end
-		local v9 = createPart()
-		if not v9 then
+		local safePart = createPart()
+		if not safePart then
 			return false
 		end
-		local cFrame = v9.CFrame + Vector3.new(0, 3, 0)
-		character_.CFrame = cFrame
+		local targetCF = safePart.CFrame + Vector3.new(0, 3, 0)
+		placeAtSafezone(character, hrp, targetCF)
 
-		task.delay(0.15, function()
-			local character_2 = localPlayer.Character
-			character_2 = character_2 and character_2:FindFirstChild("HumanoidRootPart")
-			if not character_2 then
-				return
-			end
-
-			if (character_2.Position - cFrame.Position).Magnitude > 4 then
-				character_2.CFrame = cFrame
-			end
-		end)
+		if snapBack then
+			task.delay(0.15, function()
+				local charNow = localPlayer.Character
+				local hrpNow = charNow and charNow:FindFirstChild("HumanoidRootPart")
+				if hrpNow and (hrpNow.Position - targetCF.Position).Magnitude > 4 then
+					placeAtSafezone(charNow, hrpNow, targetCF)
+				end
+			end)
+		end
 
 		return true
+	end
+
+	fn23 = function()
+		return Hub.CoinFarm.TeleportToSafezone(true, true)
 	end
 
 	fn24 = function(arg)
@@ -8943,6 +10174,9 @@ do
 	end
 
 	fn30 = function()
+		if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+			Hub.RoleState.Sync(false)
+		end
 		for _, player in ipairs(Players:GetPlayers()) do
 			if not fn26(player) then
 				continue
@@ -8973,6 +10207,9 @@ do
 	end
 
 	fn31 = function()
+		if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+			Hub.RoleState.Sync(false)
+		end
 		for _, player in ipairs(Players:GetPlayers()) do
 			if not fn26(player) then
 				continue
@@ -9073,6 +10310,9 @@ do
 	end
 
 	Hub.CoinFarm.getSheriffFlingTarget = function()
+		if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+			Hub.RoleState.Sync(false)
+		end
 		for _, player in ipairs(Players:GetPlayers()) do
 			local v9 = Hub.RoleState.cache[player.Name] or Hub.RoleState.cache[tostring(player.UserId)] or Hub.RoleState.cache[player.UserId]
 			if type(v9) == "table" and v9.Dead ~= true and v9.Role == "Sheriff" then
@@ -9090,16 +10330,19 @@ do
 		end
 
 		local function fn47()
-			if not Hub.CoinFarm.enabled or not Hub.CoinFarm.endRoundEnabled or not Hub.RoundState.active or not Hub.CoinFarm.IsLocalPlayerInRound() or arg and Hub.CoinFarm.endRoundGeneration ~= arg then
+			if not Hub.CoinFarm.enabled or not Hub.RoundState.active or not Hub.CoinFarm.IsLocalPlayerInRound() or (arg and Hub.CoinFarm.endRoundGeneration ~= arg) then
 				return false
 			end
 			local character_ = arg2.Character
-			local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
+			if not character_ then
+				return false
+			end
+			local humanoid = character_:FindFirstChildOfClass("Humanoid")
 			local v9 = Hub.RoleState.cache[arg2.Name] or Hub.RoleState.cache[tostring(arg2.UserId)] or Hub.RoleState.cache[arg2.UserId]
 			local flag7 = type(v9) == "table" and v9.Dead ~= true and v9.Role == "Sheriff"
 			local backpack = arg2:FindFirstChildOfClass("Backpack")
-			backpack = character_:FindFirstChild("Gun") ~= nil or backpack and backpack:FindFirstChild("Gun") ~= nil
-			return humanoid ~= nil and humanoid.Health > 0 and character_:IsDescendantOf(workspace) and character_:FindFirstChild("HumanoidRootPart") ~= nil and (flag7 or backpack)
+			local hasGun = character_:FindFirstChild("Gun") ~= nil or (backpack ~= nil and backpack:FindFirstChild("Gun") ~= nil)
+			return humanoid ~= nil and humanoid.Health > 0 and character_:IsDescendantOf(workspace) and character_:FindFirstChild("HumanoidRootPart") ~= nil and (flag7 or hasGun)
 		end
 
 		if not fn47() then
@@ -9119,9 +10362,12 @@ do
 		local modules = ReplicatedStorage:FindFirstChild("Modules")
 		local currentRoundClient = modules and (modules:FindFirstChild("CurrentRoundClient") or modules:WaitForChild("CurrentRoundClient", 8))
 
-		if currentRoundClient then
-			local ok, result = pcall(require, currentRoundClient)
-			ok = ok and type(result) == "table" and result.PlayerData or nil
+		if Hub.RoleState.Sync(true) then
+			Hub.RoundState.coinsReady = Hub.RoundState.active
+			Hub.CoinFarm.OnPlayerDataChanged()
+		elseif currentRoundClient then
+			local result = safeRequire(currentRoundClient)
+			local ok = type(result) == "table" and result.PlayerData or nil
 
 			if type(ok) == "table" then
 				Hub.RoleState.cache = ok
@@ -9197,7 +10443,11 @@ do
 			clone.Size = UDim2.fromOffset(150, 75)
 			clone.Visible = false
 			clone.Parent = screenGui
-			screenGui.Parent = getSafeGuiParent()
+			if not pcall(function()
+		screenGui.Parent = getSafeGuiParent()
+	end) or not screenGui.Parent then
+		screenGui.Parent = localPlayer:FindFirstChildOfClass("PlayerGui") or localPlayer:WaitForChild("PlayerGui")
+	end
 			Hub.MobileRoundTimerGui = screenGui
 			return clone
 		end
@@ -9298,12 +10548,17 @@ do
 					return
 				end
 				Hub.RoleState.cache = cache
+				local hasPlayers = next(cache) ~= nil
+				if hasPlayers then
+					Hub.RoundState.active = true
+				else
+					Hub.RoundState.active = false
+					Hub.RoundState.coinsReady = false
+				end
 				Hub.CoinFarm.OnPlayerDataChanged()
 				Hub.CoinFarm.RefreshStats()
 
-				if next(cache) == nil then
-					Hub.RoundState.active = false
-					Hub.RoundState.coinsReady = false
+				if not hasPlayers then
 					Hub.CoinFarm.OnRoundEnded()
 					task.defer(updateRoundTimer)
 				end
@@ -9314,10 +10569,10 @@ do
 
 		if roundStart and roundStart:IsA("RemoteEvent") then
 			trackConn(roundStart.OnClientEvent:Connect(function(arg, cache)
-				if type(cache) == "table" then
+				if type(cache) == "table" and next(cache) ~= nil then
 					Hub.RoleState.cache = cache
 				else
-					Hub.RoleState.cache = {}
+					Hub.RoleState.Sync(false)
 				end
 
 				Hub.RoundState.active = true
@@ -9833,7 +11088,7 @@ do
 		end)
 	end
 
-	Hub.TakeDroppedGunOnce = function()
+	Hub.TakeDroppedGunOnce = function(allowTeleport)
 		local humanoidRootPart = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
 		local huge = math.huge
 		local v9 = nil
@@ -9862,6 +11117,20 @@ do
 			return false
 		end
 		fn56(v9, true)
+		local hasFireTouch = typeof(firetouchinterest) == "function" or typeof(firetouchtransmitter) == "function"
+		if (allowTeleport or not hasFireTouch) and humanoidRootPart and humanoidRootPart.Parent and v9.Parent and not Hub.CoinFarm.FindLocalGun() then
+			local prevCF = humanoidRootPart.CFrame
+			local waitEnd = os.clock() + 0.18
+			while os.clock() < waitEnd and v9.Parent and humanoidRootPart.Parent and not Hub.CoinFarm.FindLocalGun() do
+				humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+				humanoidRootPart.CFrame = v9.CFrame + Vector3.new(0, 1.2, 0)
+				RunService.Heartbeat:Wait()
+			end
+			if humanoidRootPart.Parent then
+				humanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+				humanoidRootPart.CFrame = prevCF
+			end
+		end
 		return true
 	end
 
@@ -9967,7 +11236,7 @@ trackConn(Players.PlayerRemoving:Connect(function(player)
 	fn32(player)
 end))
 
-Hub.ReexecuteScriptUrl = "https://raw.githubusercontent.com/FoxnameTeam/OSS/main/Murder-Mystery-2/main.luau"
+Hub.ReexecuteScriptUrl = "https://raw.githubusercontent.com/FoxnameTeam/OSS/development/Murder-Mystery-2/main.luau"
 Hub.AdminReexecuteScriptUrl = Hub.ReexecuteScriptUrl
 Hub.CoinFarmKickRecoveryStarted = false
 Hub.SuppressCoinFarmKickRecovery = false
@@ -10058,13 +11327,7 @@ do
 
 		for i = 1, n2 do
 			local str = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&excludeFullGames=true&limit=100%s", tonumber(arg) or game.PlaceId, nextPageCursor and "&cursor=" .. HttpService:UrlEncode(nextPageCursor) or "")
-			local genv2 = type(getgenv) == "function" and getgenv() or _G
-
-			if type(genv2) ~= "table" then
-				genv2 = _G
-			end
-
-			local request_ = genv2.request or genv2.http_request
+			local request_ = resolveHttpRequest()
 			local body = nil
 
 			if type(request_) == "function" then
@@ -10533,8 +11796,10 @@ do
 			if joinPhone and fn36(joinPhone, playerGui) then
 				return true
 			end
-			local touchGui = CoreGui and CoreGui:FindFirstChild("TouchGui", true)
-			if not touchGui or not fn36(touchGui, CoreGui) then
+			local okTouch, touchGui = pcall(function()
+				return CoreGui and CoreGui:FindFirstChild("TouchGui", true)
+			end)
+			if not okTouch or not touchGui or not fn36(touchGui, CoreGui) then
 				return false
 			end
 			local touchControlFrame = touchGui:FindFirstChild("TouchControlFrame", true)
@@ -11042,7 +12307,6 @@ do
 	local function fn39(arg)
 	end
 
-	-- presence / wss communication removed
 end
 
 do
@@ -11372,7 +12636,16 @@ do
 					end)
 				end
 
-				imageLabel.Parent = playerGui
+				if not playerGui then
+					return
+				end
+
+				local okParent = pcall(function()
+					imageLabel.Parent = playerGui
+				end)
+				if not okParent then
+					return
+				end
 				local ContentProvider = game:GetService("ContentProvider")
 
 				flag8 = pcall(function()
@@ -11433,6 +12706,7 @@ do
 		end
 
 		for _, v9 in ipairs(tbl8) do
+			budgetYield()
 			local ok, result = pcall(iconModule.Icon2, v9)
 
 			if ok and type(result) == "table" and type(result[1]) == "string" then
@@ -11447,11 +12721,21 @@ do
 			return
 		end
 		local iconModule = Hub.Crosshair and Hub.Crosshair.iconModule
+		if not (iconModule and type(iconModule.Icon2) == "function") then
+			local wuiIcons = WindUI and WindUI.Creator and WindUI.Creator.Icons
+			if type(wuiIcons) == "table" and type(wuiIcons.Icon2) == "function" then
+				iconModule = wuiIcons
+			end
+		end
 
 		if iconModule and type(iconModule.Icon2) == "function" then
 			Hub.TouchButtons.iconModule = iconModule
-			Hub.TouchButtons.GenerateLucideIconCache()
-			Hub.TouchButtons.RefreshLucideIcons()
+			Hub.TouchButtons.iconLoading = true
+			task.spawn(function()
+				Hub.TouchButtons.GenerateLucideIconCache()
+				Hub.TouchButtons.iconLoading = false
+				Hub.TouchButtons.RefreshLucideIcons()
+			end)
 			return
 		end
 
@@ -11814,7 +13098,11 @@ Hub.TouchButtons.Create = function(arg, name, name2, text, arg2, arg3, arg4)
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.DisplayOrder = 999996
 
-	screenGui.Parent = getSafeGuiParent()
+	if not pcall(function()
+		screenGui.Parent = getSafeGuiParent()
+	end) or not screenGui.Parent then
+		screenGui.Parent = localPlayer:FindFirstChildOfClass("PlayerGui") or localPlayer:WaitForChild("PlayerGui")
+	end
 	local textButton = Instance.new("TextButton")
 	textButton.Name = name2
 	textButton.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -12172,7 +13460,11 @@ Hub.TouchButtons.ToggleQuickMenu = function(arg)
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	screenGui.DisplayOrder = 999998
 
-	screenGui.Parent = getSafeGuiParent()
+	if not pcall(function()
+		screenGui.Parent = getSafeGuiParent()
+	end) or not screenGui.Parent then
+		screenGui.Parent = localPlayer:FindFirstChildOfClass("PlayerGui") or localPlayer:WaitForChild("PlayerGui")
+	end
 
 	local function fn35(parent, size, textSize)
 		parent.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -12584,17 +13876,18 @@ local function fn37()
 		modules = modules and modules:FindFirstChild("ProfileData")
 
 		if not v14 and database then
-			local ok, result = pcall(require, database)
+			local result = safeRequire(database)
 
-			if ok and type(result) == "table" then
+			if type(result) == "table" then
 				v14 = result
 			end
+			RunService.Heartbeat:Wait()
 		end
 
 		if not v15 and modules then
-			local ok, result = pcall(require, modules)
+			local result = safeRequire(modules)
 
-			if ok and type(result) == "table" then
+			if type(result) == "table" then
 				v15 = result
 			end
 		end
@@ -12603,20 +13896,18 @@ local function fn37()
 	end
 
 	task.spawn(function()
+		if not canRequireAtGameIdentity() then
+			return
+		end
+		waitForGameUIReady(6)
 		local n3 = os.clock() + 5
 
-		while true do
-			if foxnameMM2Runtime.alive and not isTerminated then
-				if fn38() then
-					Hub.MM2StartupDataReady = true
-					break
-				else
-					task.wait(os.clock() < n3 and 0.1 or 1)
-					continue
-				end
+		while foxnameMM2Runtime.alive and not isTerminated do
+			if fn38() then
+				Hub.MM2StartupDataReady = true
+				break
 			end
-
-			break
+			task.wait(os.clock() < n3 and 0.1 or 1)
 		end
 	end)
 
@@ -13099,7 +14390,12 @@ local function fn37()
 			navigationFrame = nil
 		end
 
-		local robloxGui = game:GetService("CoreGui"):FindFirstChild("RobloxGui")
+		local okGui, robloxGui = pcall(function()
+			return game:GetService("CoreGui"):FindFirstChild("RobloxGui")
+		end)
+		if not okGui then
+			robloxGui = nil
+		end
 		robloxGui = robloxGui and robloxGui:FindFirstChild("EmotesMenu")
 		robloxGui = robloxGui and robloxGui:FindFirstChild("Children")
 		local main = robloxGui and robloxGui:FindFirstChild("Main")
@@ -13842,6 +15138,39 @@ local function fn37()
 	end
 
 	budgetYield()
+	Hub._uiInitYielding = true
+	do
+		local wrapMethods = { "Toggle", "Slider", "Dropdown", "Button", "Input", "Paragraph", "Keybind", "Colorpicker", "Divider", "Space", "Section" }
+		local wrappedTargets = {}
+		local function wrapUIBuilder(obj)
+			if type(obj) ~= "table" or wrappedTargets[obj] then
+				return obj
+			end
+			wrappedTargets[obj] = true
+			for _, mName in ipairs(wrapMethods) do
+				local orig = obj[mName]
+				if type(orig) == "function" then
+					obj[mName] = function(self, ...)
+						if Hub._uiInitYielding then
+							budgetYield()
+						end
+						local res = orig(self, ...)
+						if mName == "Section" and type(res) == "table" then
+							wrapUIBuilder(res)
+						end
+						if Hub._uiInitYielding then
+							budgetYield()
+						end
+						return res
+					end
+				end
+			end
+			return obj
+		end
+		for _, tabObj in pairs(Tabs) do
+			wrapUIBuilder(tabObj)
+		end
+	end
 
 	Tabs.Anims:Dropdown({
 		Title = "Ready Animations",
@@ -14477,10 +15806,14 @@ do
 		clientServices = clientServices and clientServices:WaitForChild("WeaponService", 3)
 
 		if clientServices then
-			local module = require(clientServices)
+			local gunFired = clientServices:FindFirstChild("GunFired") or clientServices:WaitForChild("GunFired", 1)
+			if not gunFired then
+				local module = safeRequire(clientServices)
+				gunFired = type(module) == "table" and module.GunFired or nil
+			end
 
-			if module and module.GunFired and module.GunFired.OnClientEvent then
-				module.GunFired.OnClientEvent:Connect(function(arg, arg2, arg3)
+			if gunFired and gunFired.OnClientEvent then
+				gunFired.OnClientEvent:Connect(function(arg, arg2, arg3)
 					fn40(arg, arg2, arg3)
 				end)
 			end
@@ -15905,13 +17238,17 @@ Hub.CoinFarm.xpFarmControl = Tabs.Farm:Toggle({
 		Hub.CoinFarm.xpFarmEnabled = arg and true or false
 
 		if not Hub.CoinFarm.xpFarmEnabled then
-			Hub.CoinFarm.CancelXPFarmWait()
+			if type(Hub.CoinFarm.CancelXPFarmWait) == "function" then
+				Hub.CoinFarm.CancelXPFarmWait()
+			end
 
 			if Hub.CoinFarm.enabled and Hub.CoinFarm.bagFull and Hub.CoinFarm.endRoundEnabled then
 				Hub.CoinFarm.StartEndRoundAction()
 			end
 		elseif Hub.CoinFarm.enabled and Hub.CoinFarm.bagFull then
-			Hub.CoinFarm.StartXPFarmWait()
+			if type(Hub.CoinFarm.StartXPFarmWait) == "function" then
+				Hub.CoinFarm.StartXPFarmWait()
+			end
 		end
 	end,
 })
@@ -15936,7 +17273,7 @@ Hub.CoinFarm.endRoundControl = Tabs.Farm:Toggle({
 			Hub.CoinFarm.sheriffFlingCompleted = false
 		elseif Hub.RoundState.active then
 			if Hub.CoinFarm.bagFull then
-				if not (Hub.CoinFarm.xpFarmEnabled and Hub.CoinFarm.StartXPFarmWait()) then
+				if not (Hub.CoinFarm.xpFarmEnabled and type(Hub.CoinFarm.StartXPFarmWait) == "function" and Hub.CoinFarm.StartXPFarmWait()) then
 					Hub.CoinFarm.StartEndRoundAction()
 				end
 
@@ -16151,9 +17488,9 @@ do
 			database = database and database:FindFirstChild("Sync")
 
 			if database then
-				local ok, result = pcall(require, database)
+				local result = safeRequire(database)
 
-				if ok and type(result) == "table" then
+				if type(result) == "table" then
 					eventBox.shopData = result.NewShop
 				end
 			end
@@ -16168,9 +17505,9 @@ do
 			modules = modules and modules:FindFirstChild("ProfileData")
 
 			if modules then
-				local ok, profileData = pcall(require, modules)
+				local profileData = safeRequire(modules)
 
-				if ok and type(profileData) == "table" then
+				if type(profileData) == "table" then
 					eventBox.profileData = profileData
 				end
 			end
@@ -16257,6 +17594,28 @@ do
 		return num2 or 0
 	end
 
+	local function setDropdownOptions(dropdown, values, chosen)
+		if not dropdown then
+			return
+		end
+		local updated = false
+		if dropdown.SetValues then
+			updated = pcall(function()
+				dropdown:SetValues(values)
+			end)
+		end
+		if not updated and dropdown.Refresh then
+			pcall(function()
+				dropdown:Refresh(values)
+			end)
+		end
+		if chosen ~= nil then
+			pcall(function()
+				dropdown:Select(chosen)
+			end)
+		end
+	end
+
 	local function fn44(arg, arg2)
 		local tbl7 = fn42(arg)
 
@@ -16266,27 +17625,7 @@ do
 
 		local v9 = table.find(tbl7, arg2) and arg2 or tbl7[1]
 		eventBox.selectedCurrency = v9 ~= "Unavailable" and v9 or nil
-		local currencyDropdown = eventBox.currencyDropdown
-
-		if currencyDropdown then
-			local flag7 = false
-
-			if currencyDropdown.SetValues then
-				flag7 = pcall(function()
-					currencyDropdown:SetValues(tbl7)
-				end)
-			end
-
-			if not flag7 and currencyDropdown.Refresh then
-				pcall(function()
-					currencyDropdown:Refresh(tbl7)
-				end)
-			end
-
-			pcall(function()
-				currencyDropdown:Select(v9)
-			end)
-		end
+		setDropdownOptions(eventBox.currencyDropdown, tbl7, v9)
 	end
 
 	local function fn45(arg)
@@ -16382,20 +17721,10 @@ do
 		return ok
 	end
 
-	local tbl7 = fn41()
-
-	if #tbl7 == 0 then
-		tbl7 = { "Unavailable" }
-	end
-
-	eventBox.selectedBox = tbl7[1] ~= "Unavailable" and tbl7[1] or nil
-	local selectedBox = eventBox.selectedBox and fn42(eventBox.selectedBox) or {}
-
-	if #selectedBox == 0 then
-		selectedBox = { "Unavailable" }
-	end
-
-	eventBox.selectedCurrency = selectedBox[1] ~= "Unavailable" and selectedBox[1] or nil
+	local tbl7 = { "Unavailable" }
+	eventBox.selectedBox = nil
+	local selectedBox = { "Unavailable" }
+	eventBox.selectedCurrency = nil
 	budgetYield()
 
 	Tabs.Farm:Section({ Title = "Event Boxes", TextXAlignment = "Center", TextSize = 17, Opened = true })
@@ -16425,6 +17754,24 @@ do
 			end
 		end,
 	})
+
+	task.spawn(function()
+		if not canRequireAtGameIdentity() then
+			return
+		end
+		waitForGameUIReady(6)
+		if not foxnameMM2Runtime.alive or isTerminated then
+			return
+		end
+		local boxes = fn41()
+		if #boxes == 0 then
+			return
+		end
+		local chosenBox = (eventBox.selectedBox and eventBox.boxes[eventBox.selectedBox]) and eventBox.selectedBox or boxes[1]
+		eventBox.selectedBox = chosenBox
+		setDropdownOptions(eventBox.boxDropdown, boxes, chosenBox)
+		fn44(chosenBox, eventBox.selectedCurrency)
+	end)
 
 	Tabs.Farm:Button({
 		Title = "Buy Box",
@@ -18373,6 +19720,7 @@ do
 	})
 
 	Tabs.Teleports:Divider()
+	budgetYield()
 
 	Hub.AutoMapVote.control = Tabs.Teleports:Toggle({
 		Title = "Auto Map Vote",
@@ -18747,21 +20095,29 @@ do
 					return
 				end
 				avoidMurderer.accumulator = 0
-				local flag7 = not Hub.RoundState.active or Hub.CoinFarm.GetCachedRole(localPlayer) == "Murderer"
-
-				if not flag7 then
-					local nextTeleportAt = avoidMurderer.nextTeleportAt
-					flag7 = os.clock() < nextTeleportAt
+				if os.clock() < (avoidMurderer.nextTeleportAt or 0) then
+					return
 				end
-
-				if flag7 then
+				if type(Hub.RoleState.cache) ~= "table" or next(Hub.RoleState.cache) == nil then
+					Hub.RoleState.Sync(false)
+				end
+				if not Hub.RoundState.active or not Hub.CoinFarm.IsLocalPlayerInRound() then
+					return
+				end
+				local myRole = Hub.CoinFarm.GetCachedRole(localPlayer)
+				if myRole == "Murderer" or myRole == "Zombie" then
 					return
 				end
 				local character_ = localPlayer.Character
 				local humanoid = character_ and character_:FindFirstChildOfClass("Humanoid")
 				character_ = character_ and character_:FindFirstChild("HumanoidRootPart")
-				local v12 = Hub.CoinFarm.GetMurdererRoot()
-				if not humanoid or humanoid.Health <= 0 or not character_ or not v12 or (v12.Position - character_.Position).Magnitude > avoidMurderer.distance then
+				if not humanoid or humanoid.Health <= 0 or not character_ then
+					return
+				end
+				local v12 = Hub.CoinFarm.GetMurdererRoot(character_.Position)
+				local murdHum = v12 and v12.Parent and v12.Parent:FindFirstChildOfClass("Humanoid")
+				local curDist = v12 and (v12.Position - character_.Position).Magnitude or math.huge
+				if not v12 or (murdHum and murdHum.Health <= 0) or curDist > avoidMurderer.distance then
 					return
 				end
 				local v13 = Hub.CoinFarm.ResolveMap()
@@ -18772,6 +20128,10 @@ do
 				if not v14 then
 					return
 				end
+				local furDist = (v14.Position - v12.Position).Magnitude
+				if furDist <= curDist + 4 and not (curDist < 15 and furDist > curDist + 1) then
+					return
+				end
 				avoidMurderer.nextTeleportAt = os.clock() + 1.2
 				Hub.CoinFarm.CancelTween()
 				Hub.CoinFarm.currentCoin = nil
@@ -18780,17 +20140,28 @@ do
 					Hub.CoinFarm.stabilizer = nil
 				end
 				Hub.CoinFarm.stabilizerRoot = nil
+				local safeHeight = v14.Size.Y * 0.5 + character_.Size.Y * 0.5 + 3.0
+				local targetPos = v14.Position + Vector3.new(0, safeHeight, 0)
+				local rayParams = RaycastParams.new()
+				rayParams.FilterType = Enum.RaycastFilterType.Exclude
+				rayParams.RespectCanCollide = true
+				rayParams.FilterDescendantsInstances = character_.Parent and { character_.Parent } or { character_ }
+				local floorHit = workspace:Raycast(v14.Position + Vector3.new(0, 2.5, 0), Vector3.new(0, -12, 0), rayParams)
+				if floorHit then
+					local floorY = math.max(floorHit.Position.Y, v14.Position.Y - v14.Size.Y * 0.5)
+					targetPos = Vector3.new(v14.Position.X, floorY + (humanoid.HipHeight > 0 and humanoid.HipHeight or 2) + character_.Size.Y * 0.5 + 0.5, v14.Position.Z)
+				end
 				character_.AssemblyLinearVelocity = Vector3.zero
 				character_.AssemblyAngularVelocity = Vector3.zero
-				local safeHeight = v14.Size.Y * 0.5 + character_.Size.Y * 0.5 + 3.5
-				character_.CFrame = v14.CFrame + Vector3.new(0, safeHeight, 0)
-				if character_.Parent then
-					for _, limb in ipairs(character_.Parent:GetDescendants()) do
-						if limb:IsA("BasePart") then
-							limb.CanCollide = false
-						end
-					end
+				character_.CFrame = CFrame.new(targetPos)
+				if Hub.CoinFarm.ReleaseTravelNoclip then
+					Hub.CoinFarm.ReleaseTravelNoclip(false)
 				end
+				if not Hub.FlyEnabled then
+					humanoid.PlatformStand = false
+				end
+				Hub.CoinFarm.evasionGraceUntil = math.max(Hub.CoinFarm.evasionGraceUntil or 0, os.clock() + 1.2)
+				Hub.CoinFarm.nextCoin = nil
 			end)
 		end,
 	})
@@ -18906,6 +20277,7 @@ do
 			Hub.TouchButtons.ApplyAppearance(Hub.GetGunButtonState.button, Hub.GetGunButtonState)
 		end,
 	})
+	budgetYield()
 
 	tbl2.General:Toggle({
 		Title = "Get Gun Button Draggable",
@@ -19601,6 +20973,7 @@ local function fn39()
 		if Hub.AutoSaveConfigControl then
 			fn48(Hub.AutoSaveConfigControl, Hub.AutoSaveConfig)
 		end
+		budgetYield()
 		fn48(Hub.CoinFarm.serverHopControl, Hub.CoinFarm.serverHopLowPlayers)
 		fn48(Hub.CoinFarm.serverHopThresholdControl, Hub.CoinFarm.serverHopPlayerThreshold)
 		fn48(Hub.CoinFarm.serverHopTimerToggle, Hub.CoinFarm.serverHopTimerEnabled)
@@ -19608,6 +20981,7 @@ local function fn39()
 		fn48(Hub.CoinFarm.speedControl, speed)
 		fn48(Hub.CoinFarm.lobbyFarmControl, Hub.CoinFarm.lobbyFarmEnabled)
 		fn48(Hub.CoinFarm.antiBotControl, Hub.CoinFarm.antiBotEnabled)
+		budgetYield()
 		Hub.AutoPrestige.SetEnabled(flag8.autoPrestige == true)
 		fn48(Hub.AutoPrestige.control, Hub.AutoPrestige.enabled)
 		Hub.AutoClaimReward.SetEnabled(flag8.autoClaimRewards ~= false)
@@ -19680,7 +21054,13 @@ local function fn39()
 		return true
 	end
 
+	local initConfigsCache = nil
+	local useInitConfigCache = true
+
 	local function fn50()
+		if useInitConfigCache and initConfigsCache then
+			return initConfigsCache
+		end
 		local tbl9 = {}
 		local tbl10 = {}
 		if type(configManager) ~= "table" or type(configManager.AllConfigs) ~= "function" then
@@ -19714,6 +21094,9 @@ local function fn39()
 		end
 
 		table.sort(tbl9)
+		if useInitConfigCache then
+			initConfigsCache = tbl9
+		end
 		return tbl9
 	end
 
@@ -20085,7 +21468,6 @@ local function fn39()
 
 	Hub.AutoExecuteControl = Tabs.Settings:Toggle({
 		Title = "Auto Execute",
-		Desc = "Re-executes script on teleport using queue_on_teleport",
 		Flag = "Settings_AutoExecute",
 		Default = Hub.AutoExecuteOnTeleport ~= false,
 		Callback = function(val)
@@ -20095,7 +21477,6 @@ local function fn39()
 
 	Hub.AutoLoadConfigControl = Tabs.Settings:Toggle({
 		Title = "Auto Load Config",
-		Desc = "Automatically loads the selected config on script startup",
 		Flag = "Settings_AutoLoadConfig",
 		Default = flag7,
 		Callback = function(val)
@@ -20114,7 +21495,6 @@ local function fn39()
 	Hub.AutoSaveConfig = false
 	Hub.AutoSaveConfigControl = Tabs.Settings:Toggle({
 		Title = "Auto Save Config",
-		Desc = "Periodically saves current settings to the active config",
 		Flag = "Settings_AutoSaveConfig",
 		Default = false,
 		Callback = function(val)
@@ -20342,9 +21722,12 @@ local function fn39()
 			end)
 		end
 
+		budgetYield()
 		if flag8 and result ~= false then
 			fn49(v13)
+			budgetYield()
 			fn47(v13)
+			budgetYield()
 
 			task.defer(function()
 				fn49(v13)
@@ -20358,11 +21741,13 @@ local function fn39()
 
 			v9 = v12
 			fn65(v12)
+			budgetYield()
 
-			if nowUsingTheme then
+			if nowUsingTheme and WindUI.GetCurrentTheme and WindUI:GetCurrentTheme() ~= nowUsingTheme then
 				pcall(function()
 					WindUI:SetTheme(nowUsingTheme)
 				end)
+				budgetYield()
 			end
 
 			fn64()
@@ -20378,12 +21763,17 @@ local function fn39()
 		return false
 	end
 
+	budgetYield()
 	fn65(v9)
+	budgetYield()
 	fn64()
+	useInitConfigCache = false
+	initConfigsCache = nil
 end
 
 budgetYield()
 fn39()
+budgetYield()
 
 local function fn40()
 	local v9 = nil
@@ -20402,21 +21792,30 @@ local function fn40()
 	local str = "Foxname_MM2_Aim_" .. sessionId
 	local flag7 = false
 
-	local fovDrawingImmediate = type(DrawingImmediate) == "table" and type(DrawingImmediate.GetPaint) == "function"
+	local fovDrawingImmediate = type(DrawingImmediate) == "table" and type(DrawingImmediate.GetPaint) == "function" and type(DrawingImmediate.Circle) == "function"
 	local fovDrawingCircle = nil
 
 	if fovDrawingImmediate then
-		DrawingImmediate.GetPaint(20):Connect(function()
-			if not foxnameMM2Runtime.alive or isTerminated then
-				return
-			end
-			if Hub.AimEnabled and not Hub.HideFOV then
-				local center = currentCamera.ViewportSize / 2
-				local color = Color3.fromHSV(os.clock() * 0.35 % 1, 1, 1)
-				DrawingImmediate.Circle(center, Hub.FOV, color, 1, 64, 2)
-			end
+		local okPaint = pcall(function()
+			local paintSignal = DrawingImmediate.GetPaint(20)
+			assert(paintSignal and type(paintSignal.Connect) == "function", "missing GetPaint.Connect")
+			paintSignal:Connect(function()
+				if not foxnameMM2Runtime.alive or isTerminated then
+					return
+				end
+				if Hub.AimEnabled and not Hub.HideFOV then
+					local center = currentCamera.ViewportSize / 2
+					local color = Color3.fromHSV(os.clock() * 0.35 % 1, 1, 1)
+					DrawingImmediate.Circle(center, Hub.FOV, color, 1, 64, 2)
+				end
+			end)
 		end)
-	elseif type(Drawing) == "table" and type(Drawing.new) == "function" then
+		if not okPaint then
+			fovDrawingImmediate = false
+		end
+	end
+
+	if not fovDrawingImmediate and type(Drawing) == "table" and type(Drawing.new) == "function" then
 		local ok, circle = pcall(function()
 			local c = Drawing.new("Circle")
 			c.Thickness = 2
@@ -20569,7 +21968,6 @@ local function fn40()
 		local visible = Hub.AimEnabled and not Hub.HideFOV
 
 		if fovDrawingImmediate then
-			-- DrawingImmediate handles rendering in GetPaint(20) callback
 		elseif fovDrawingCircle then
 			fovDrawingCircle.Visible = visible
 			if visible then
@@ -20674,7 +22072,8 @@ local function fn40()
 							local parent = v14.Parent
 							local humanoid = parent and parent:FindFirstChildOfClass("Humanoid")
 							parent = parent and (parent:FindFirstChild("HumanoidRootPart") or v14)
-							local n2 = math.clamp(localPlayer:GetNetworkPing(), 0.02, 0.22)
+							local okPing, rawPing = pcall(localPlayer.GetNetworkPing, localPlayer)
+							local n2 = math.clamp(okPing and tonumber(rawPing) or 0.05, 0.02, 0.22)
 							parent = parent and parent.AssemblyLinearVelocity or v14.AssemblyLinearVelocity or Vector3.zero
 
 							if parent.Magnitude > 65 then
@@ -20697,7 +22096,9 @@ local function fn40()
 							local n3 = v14.Position + parent * (n2 * 0.9 + (Hub.PredictionStrength or 5) * 10 / 1000)
 
 							if Hub.AutoShootState.mode == "Behind Walls" or Hub.AutoShootState.mode == "Wallbang" then
-								tbl8[1] = CFrame.new(n3 + Vector3.new(0, 1.2, 0))
+								tbl8[1] = CFrame.lookAt(n3 + Vector3.new(2, 0.35, 0), n3)
+							elseif typeof(tbl8[1]) == "CFrame" and (n3 - tbl8[1].Position).Magnitude > 0.01 then
+								tbl8[1] = CFrame.lookAt(tbl8[1].Position, n3)
 							end
 
 							tbl8[2] = CFrame.new(n3)
@@ -20770,73 +22171,128 @@ local function fn40()
 		backpack.ChildAdded:Connect(fn48)
 	end
 
+	budgetYield()
 	Hub.UpdateAimBinding()
 end
 
 fn40()
+budgetYield()
 
 do
+	local CollectionService = game:GetService("CollectionService")
+
+	local function raycastWeapon(origin, direction, extraIgnore)
+		if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" or direction.Magnitude < 1e-4 then
+			return nil
+		end
+		local ignore = {}
+		if localPlayer.Character then
+			table.insert(ignore, localPlayer.Character)
+		end
+		if type(extraIgnore) == "table" then
+			for _, inst in ipairs(extraIgnore) do
+				if inst then
+					table.insert(ignore, inst)
+				end
+			end
+		end
+		local okTag, tagged = pcall(CollectionService.GetTagged, CollectionService, "WeaponPassthrough")
+		if okTag and type(tagged) == "table" then
+			for _, inst in ipairs(tagged) do
+				table.insert(ignore, inst)
+			end
+		end
+		local rp = RaycastParams.new()
+		rp.FilterType = Enum.RaycastFilterType.Exclude
+		rp.FilterDescendantsInstances = ignore
+		rp.IgnoreWater = true
+		for _ = 1, 6 do
+			local hit = workspace:Raycast(origin, direction, rp)
+			if hit and hit.Instance and hit.Instance.Transparency >= 0.99 then
+				table.insert(ignore, hit.Instance)
+				rp.FilterDescendantsInstances = ignore
+				continue
+			end
+			return hit
+		end
+		return nil
+	end
+
+	Hub.CoinFarm.RaycastWeapon = raycastWeapon
+
 	local function fn41()
 		local character_ = localPlayer.Character
 		if not character_ then
-			return nil
+			return nil, false
 		end
 		local gun = character_:FindFirstChild("Gun")
 		if gun and gun:IsA("Tool") then
-			return gun
+			return gun, false
 		end
 		local humanoid = character_:FindFirstChildOfClass("Humanoid")
 		local backpack = localPlayer:FindFirstChildOfClass("Backpack")
 		local gun2 = backpack and backpack:FindFirstChild("Gun")
 		if not (humanoid and gun2 and gun2:IsA("Tool")) then
-			return nil
+			return nil, false
 		end
 
 		pcall(function()
 			humanoid:EquipTool(gun2)
 		end)
 
-		for i = 1, 6 do
+		for _ = 1, 15 do
 			local gun3 = character_:FindFirstChild("Gun")
 			if gun3 and gun3:IsA("Tool") then
-				return gun3
+				return gun3, true
 			end
 			task.wait(0.02)
 		end
 
-		return character_:FindFirstChild("Gun") or gun2
+		local equipped = character_:FindFirstChild("Gun")
+		return equipped or gun2, equipped ~= nil
 	end
 
-	local function fn42(arg, arg2)
-		local rightHand = arg:FindFirstChild("RightHand") or arg:FindFirstChild("Right Arm")
-		if rightHand and rightHand:IsA("BasePart") then
-			return rightHand.CFrame
-		end
-		local gunRaycastAttachment = arg2:FindFirstChild("GunRaycastAttachment") or arg2:FindFirstChild("GunRaycastAttachment", true)
+	local function fn42(character_, hrp, gun, targetPos)
+		local head = character_:FindFirstChild("Head")
+		local gunRaycastAttachment = (gun and (gun:FindFirstChild("GunRaycastAttachment") or gun:FindFirstChild("GunRaycastAttachment", true)))
+			or hrp:FindFirstChild("GunRaycastAttachment")
+			or hrp:FindFirstChild("GunRaycastAttachment", true)
+		local originPos = nil
 		if gunRaycastAttachment and gunRaycastAttachment:IsA("Attachment") then
-			return gunRaycastAttachment.WorldCFrame
+			local attPos = gunRaycastAttachment.WorldPosition
+			if not (head and head:IsA("BasePart")) or not raycastWeapon(head.Position, attPos - head.Position, { gun }) then
+				originPos = attPos
+			end
 		end
-		return CFrame.new(arg2.Position + Vector3.new(0, 0.5, 0))
+		if not originPos then
+			local rightHand = character_:FindFirstChild("RightHand") or character_:FindFirstChild("Right Arm")
+			if rightHand and rightHand:IsA("BasePart") and (not (head and head:IsA("BasePart")) or not raycastWeapon(head.Position, rightHand.Position - head.Position, { gun })) then
+				originPos = rightHand.Position
+			else
+				originPos = (head and head:IsA("BasePart") and head.Position) or (hrp.Position + Vector3.new(0, 1.5, 0))
+			end
+		end
+		if typeof(targetPos) == "Vector3" and (targetPos - originPos).Magnitude > 0.01 then
+			return CFrame.lookAt(originPos, targetPos)
+		end
+		return CFrame.new(originPos)
 	end
 
-	local function fn43(arg, arg2)
+	local function fn43(arg, arg2, ignoreCooldown, gun, targetCharacter)
 		local character_ = localPlayer.Character
 		if not character_ or typeof(arg) ~= "Vector3" then
 			return false
 		end
-		local gun = fn41()
+		if not gun or gun.Parent ~= character_ then
+			local resolvedGun, justEquipped = fn41()
+			gun = resolvedGun
+			if justEquipped then
+				RunService.Heartbeat:Wait()
+				task.wait(0.05)
+			end
+		end
 		if not gun then
 			return false
-		end
-		local humanoid = character_:FindFirstChildOfClass("Humanoid")
-
-		if gun.Parent ~= character_ and humanoid then
-			pcall(function()
-				humanoid:EquipTool(gun)
-			end)
-
-			task.wait(0.05)
-			gun = character_:FindFirstChild("Gun") or gun
 		end
 
 		local shoot = gun:FindFirstChild("Shoot") or gun:FindFirstChild("Shoot", true)
@@ -20844,7 +22300,7 @@ do
 			return false
 		end
 		local lastShotAt = Hub.AutoShootState.lastShotAt
-		if os.clock() - lastShotAt < Hub.AutoShootState.cooldown then
+		if not ignoreCooldown and os.clock() - lastShotAt < Hub.AutoShootState.cooldown then
 			return false
 		end
 		local humanoidRootPart = character_:FindFirstChild("HumanoidRootPart")
@@ -20855,15 +22311,32 @@ do
 		local cframe
 
 		if arg2 == "Behind Walls" or arg2 == "Wallbang" or arg2 == "Behind Walls(inaccurate)" then
-			cframe = CFrame.new(arg + Vector3.new(0, 1.2, 0))
+			local extraIgnore = { targetCharacter, gun }
+			local chosenOrigin = arg + Vector3.new(2, 0.35, 0)
+			local offsets = {
+				Vector3.new(2, 0.35, 0),
+				Vector3.new(-2, 0.35, 0),
+				Vector3.new(0, 0.35, 2),
+				Vector3.new(0, 0.35, -2),
+				Vector3.new(1.5, 1.5, 1.5),
+				Vector3.new(-1.5, 1.5, -1.5),
+				Vector3.new(0, 2.2, 0),
+			}
+			for _, off in ipairs(offsets) do
+				local cand = arg + off
+				if not raycastWeapon(arg, off, extraIgnore) and not raycastWeapon(cand, arg - cand, extraIgnore) then
+					chosenOrigin = cand
+					break
+				end
+			end
+			cframe = (arg - chosenOrigin).Magnitude > 0.01 and CFrame.lookAt(chosenOrigin, arg) or CFrame.new(chosenOrigin)
 		else
-			cframe = fn42(character_, humanoidRootPart)
+			cframe = fn42(character_, humanoidRootPart, gun, arg)
 		end
 
-		local v9 = cframe
 		local cframe2 = CFrame.new(arg)
 		if not pcall(function()
-			shoot:FireServer(v9, cframe2)
+			shoot:FireServer(cframe, cframe2)
 		end) then
 			return false
 		end
@@ -20871,26 +22344,19 @@ do
 		return true
 	end
 
-	Hub.UpdateAutoShoot = function(arg, arg2)
+	Hub.UpdateAutoShoot = function(arg, arg2, opts)
 		local character_ = localPlayer.Character
 		if not character_ then
 			return false
 		end
 		local flag7 = character_:FindFirstChild("Gun") ~= nil
-		local flag8
-
-		if flag7 then
-			flag8 = flag7
-		else
-			flag8 = localPlayer:FindFirstChildOfClass("Backpack") and localPlayer.Backpack:FindFirstChild("Gun") ~= nil
-		end
+		local flag8 = flag7 or (localPlayer:FindFirstChildOfClass("Backpack") and localPlayer.Backpack:FindFirstChild("Gun") ~= nil)
 
 		if not flag8 then
 			local v9 = fn31()
 			if v9 and v9 ~= localPlayer then
 				return false
 			end
-
 			if fn28(localPlayer) ~= "Sheriff" then
 				return false
 			end
@@ -20901,13 +22367,30 @@ do
 			return false
 		end
 
+		local ignoreCooldown = type(opts) == "table" and opts.ignoreCooldown == true
+		if not ignoreCooldown and os.clock() - Hub.AutoShootState.lastShotAt < Hub.AutoShootState.cooldown then
+			return false
+		end
+
+		local gun, justEquipped = fn41()
+		if not gun then
+			return false
+		end
+		if justEquipped then
+			RunService.Heartbeat:Wait()
+			task.wait(0.05)
+		end
+
 		local character_2 = arg2.Character
+		if not character_2 then
+			return false
+		end
 		local humanoid = character_2:FindFirstChildOfClass("Humanoid")
 		if humanoid and humanoid.Health <= 0 then
 			return false
 		end
 		local humanoidRootPart = character_2:FindFirstChild("HumanoidRootPart")
-		local aimlockPart = Hub.AimlockPart or Hub.AutoShootState.part or "Head"
+		local aimlockPart = (type(opts) == "table" and opts.targetPart) or Hub.AimlockPart or Hub.AutoShootState.part or "Head"
 		local torso = character_2:FindFirstChild(aimlockPart)
 
 		if not torso and aimlockPart == "UpperTorso" then
@@ -20921,7 +22404,8 @@ do
 			return false
 		end
 		arg = arg or Hub.AutoShootState.mode
-		local n2 = math.clamp(localPlayer:GetNetworkPing(), 0.02, 0.22)
+		local okPing, rawPing = pcall(localPlayer.GetNetworkPing, localPlayer)
+		local n2 = math.clamp(okPing and tonumber(rawPing) or 0.05, 0.02, 0.22)
 		local assemblyLinearVelocity = humanoidRootPart.AssemblyLinearVelocity or head.AssemblyLinearVelocity or Vector3.zero
 
 		if assemblyLinearVelocity.Magnitude > 65 then
@@ -20929,19 +22413,13 @@ do
 		end
 
 		local moveDirection = humanoid and humanoid.MoveDirection or Vector3.zero
-		local walkSpeed
-
-		if humanoid and humanoid.WalkSpeed > 0 then
-			walkSpeed = humanoid.WalkSpeed
-		else
-			walkSpeed = 16
-		end
+		local walkSpeed = (humanoid and humanoid.WalkSpeed > 0) and humanoid.WalkSpeed or 16
 
 		if moveDirection.Magnitude > 0.1 then
 			assemblyLinearVelocity = Vector3.new(moveDirection.X * walkSpeed, assemblyLinearVelocity.Y * 0.65, moveDirection.Z * walkSpeed)
 		end
 
-		return fn43(head.Position + assemblyLinearVelocity * (n2 * 0.9 + (Hub.PredictionStrength or 5) * 10 / 1000), arg)
+		return fn43(head.Position + assemblyLinearVelocity * (n2 * 0.9 + (Hub.PredictionStrength or 5) * 10 / 1000), arg, ignoreCooldown, gun, character_2)
 	end
 
 	Hub.TriggerAutoShootInput = function()
@@ -20961,19 +22439,23 @@ do
 		Hub.TouchButtons.ToggleAutoShootButton(arg)
 	end
 
-	Hub.CoinFarm.shootMurderer = function(arg)
+	Hub.CoinFarm.shootMurderer = function(arg, opts)
 		if arg and Hub.CoinFarm.endRoundGeneration ~= arg then
 			return false
 		end
 		local v9 = Hub.CoinFarm.GetCachedRole(localPlayer)
-		if Hub.CoinFarm.endRoundDeathRequested or (v9 ~= "Sheriff" and v9 ~= "Hero") then
+		local char = localPlayer.Character
+		local bp = localPlayer:FindFirstChildOfClass("Backpack")
+		local hasGun = (char and char:FindFirstChild("Gun") ~= nil) or (bp and bp:FindFirstChild("Gun") ~= nil)
+		if Hub.CoinFarm.endRoundDeathRequested or (v9 ~= "Sheriff" and v9 ~= "Hero" and not hasGun) then
 			return false
 		end
 
 		if not fn41() then
 			return false
 		end
-		return Hub.UpdateAutoShoot and Hub.UpdateAutoShoot("Behind Walls")
+		local shootMode = (type(opts) == "table" and opts.mode) or "Behind Walls"
+		return Hub.UpdateAutoShoot and Hub.UpdateAutoShoot(shootMode, nil, opts)
 	end
 end
 
@@ -21017,7 +22499,10 @@ task.spawn(function()
 			Hub.ApplyAutoLoadConfig()
 		end
 
+		Hub._uiInitYielding = false
 		Hub.CoinFarm.ApplyResume()
+	else
+		Hub._uiInitYielding = false
 	end
 end)
 
