@@ -2,15 +2,15 @@
 
 Reference for all in-game options per tab.
 
-## Discord / UNC / sUNC (1121-1390)
+## Discord / UNC / sUNC (1175-1394)
 
 | Option | Notes |
 | --- | --- |
-| Foxname Community | Real-time member and presence count from Discord invite API. |
+| Foxname Community | Real-time member count, presence count, and server icon from Discord invite API. |
 | Copy Discord Invite / Refresh Info | Copies community invite link and refreshes stats. |
 | Executor & Feature Support | Diagnostic table displaying which executor environment APIs are supported. |
 
-## Visuals (15825-16716)
+## Visuals (15818-16838)
 
 | Option | Notes |
 | --- | --- |
@@ -22,26 +22,26 @@ Reference for all in-game options per tab.
 | XRay | Makes obstruction parts semi-transparent (`xrayTransparency = 0.72`). Includes mobile button. |
 | Shaders & Atmosphere | Shader presets, specular scale, skybox, snowflake density, and fog density. |
 
-## Crosshair (16717-16817)
+## Crosshair (16840-16937)
 
 Custom crosshair rendering with Lucide icon cursor support, size adjustment, and RGB color cycles.
 
-## Combat (16818-17068, 20007-20641)
+## Combat (16941-17190, 20130-20761)
 
-### Aim (16818+)
+### Aim (16941+)
 - **Aim Style**: Smooth camera tracking or silent aim metamethod interception.
 - **Controls**: FOV circle slider (rendered with 3-tier hardware overlay: `DrawingImmediate` -> `Drawing` -> `Frame`), wall check toggle, role constraint ("Only Aim While Sheriff"), prediction factor.
 - **Mobile Action**: Dedicated Aimlock touch button with draggable positioning.
 
-### Sheriff (16970+)
+### Sheriff (17093+)
 - Auto-shoot trigger with customizable target body part (Head/Torso), multi-attempt reload retry, clear-shot fallback, and safezone return.
 - On-screen touch button and keyboard keybind activation.
 
-### Murderer (20007+)
+### Murderer (20130+)
 - **Throw Knife Button**: On-screen action touch button with draggable positioning and direct toggle synchronization.
 - **Combat Aids**: Knife Aura, Hitbox Expander, and Kill All automation.
 
-## Player (17936-18840)
+## Player (17944-18901)
 
 | Option | Notes |
 | --- | --- |
@@ -54,11 +54,11 @@ Custom crosshair rendering with Lucide icon cursor support, size adjustment, and
 | Invisibility | Seat-based character offset technique. |
 | Jerk | Custom character motion simulation. |
 
-## Farm (17069-17935)
+## Farm (17192-17940)
 
 - **Progression**: Auto-prestige upon level requirement and automatic seasonal reward claiming.
 - **Coin Farm Core**:
-  - Farm Modes: `CFrame`, `Tween`, and `Lobby` (stays in Lobby with a safe delay, syncs server position before touching the coin/candy, and returns to Lobby).
+  - Farm Modes: `CFrame` (with active position stabilization via `FoxnameCoinFarmStabilizer` and `CFrame` hold during Normal Stop-and-Go delays), `Tween`, and `Lobby` (stays in Lobby with a safe delay, syncs server position before touching the coin/candy, and returns to Lobby).
   - Targeting Methods: Advanced (optimal cluster pathing) or Simple (nearest coin).
   - Movement Modes: Stop and Go (stealthy step intervals) or Continuous (steady navigation).
   - End Round Modes: `Normal (shooting)`, `Shoot only if Gun Dropped`, `Fling Murderer`, or `Fling All`, plus safezone XP waiting.
@@ -66,23 +66,23 @@ Custom crosshair rendering with Lucide icon cursor support, size adjustment, and
   - Automation: Anti-bot server hopping, player threshold triggers, scheduled hop timer, Discord webhook statistics dispatch.
   - Event Boxes: Auto-buy seasonal crates with selectable currencies.
 
-## Anims (15175-15615)
+## Anims (15298-15738)
 
 - Emote browser with synchronization hooks.
 - Custom animation player and playback speed multiplier.
 - Instant gun pickup helper.
 
-## Radio (15616-15824)
+## Radio (15739-15816)
 
 - Client-side and FE audio playback.
 - Track search, custom Sound ID input, and volume normalization.
 
-## Teleports (19673-20006)
+## Teleports (19796-20127)
 
 - Instant location presets: Murderer, Sheriff, Dropped Gun, Safezone, Lobby.
 - Lobby Map Voting: Automated voting board interaction (`runAutoMapVoteCycle`) with configurable board target.
 
-## Settings (20642-21778)
+## Settings (20764-21895)
 
 - Configuration manager: Save, load, and auto-restore profiles (`WindUI/Foxname_MM2/config/`).
 - Mobile action button customization: Shape, size, and accent styling.

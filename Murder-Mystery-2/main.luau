@@ -635,14 +635,18 @@ do
 		}
 
 		local cachePath = "Foxname/WindUI_cache.lua"
+		local function isRawWindUI(src)
+			return typeof(src) == "string" and #src > 400 and src:sub(1, 7) ~= "--[[FN_" and src:sub(1, 10) ~= "--[Foxname"
+		end
+
 		local function tryReadCache()
 			if typeof(isfile) == "function" and typeof(readfile) == "function" then
 				local ok, content = pcall(readfile, cachePath)
-				if ok and typeof(content) == "string" and #content > 400 then
+				if ok and isRawWindUI(content) then
 					return content
 				end
 				local ok2, content2 = pcall(readfile, "WindUI.lua")
-				if ok2 and typeof(content2) == "string" and #content2 > 400 then
+				if ok2 and isRawWindUI(content2) then
 					return content2
 				end
 			end
@@ -650,7 +654,7 @@ do
 		end
 
 		local function tryWriteCache(src)
-			if typeof(writefile) == "function" and typeof(src) == "string" and #src > 400 then
+			if typeof(writefile) == "function" and isRawWindUI(src) then
 				pcall(function()
 					if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder("Foxname") then
 						makefolder("Foxname")
@@ -669,11 +673,8 @@ do
 		end
 
 		local function patchWindUI(src)
-			if src:find("--[[FN_WUI_PATCH_V5]]", 1, true) then
-				return src
-			end
-
-			local str2 = src:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
+			local str2 = src:gsub("\r\n", "\n")
+			str2 = str2:gsub("WaitForChild%(\"GetIcons\",%s*%d+%)", "FindFirstChild(\"GetIcons\")"):gsub("local d=b%(game:GetService\"ReplicatedStorage\":WaitForChild%(\"GetIcons\",99999%):InvokeServer%(%)%)", "local d={Icons={}}")
 			str2 = str2:gsub("d=ak%.AddSignal%(ar%.UIElements%.ContainerFrame%.ChildAdded,%s*function%(%)%s*b%.Visible=false%s*d:Disconnect%(%)%s*end%)", "d=ak.AddSignal(ar.UIElements.ContainerFrame.ChildAdded,function(c) if c~=b and c.ClassName~='UIListLayout' and c.ClassName~='UIPadding' then b.Visible=false b.Size=UDim2.new(1,0,0,0) if d then d:Disconnect() end end end)\nif #ar.Elements>0 or #ar.UIElements.ContainerFrame:GetChildren()>3 then b.Visible=false b.Size=UDim2.new(1,0,0,0) end")
 
 			str2 = str2:gsub("function ([%w_]+)%.AddFontObject%(([%w_]+)%)\ntable%.insert%(%1%.FontObjects,%2%)\n%1%.UpdateFont%(%1%.Font%)\nend", function(mObj, pArg)
@@ -698,52 +699,52 @@ do
 					"function aw.Open(" .. openArg .. ")",
 					"if aw.Destroyed then return end",
 					"aw._animGen=(aw._animGen or 0)+1",
-					"local _gen=aw._animGen",
-					"if aw._animTweens then for _,_tw in ipairs(aw._animTweens) do pcall(function() _tw:Cancel() end) end end",
-					"local _tws={}",
-					"aw._animTweens=_tws",
+					"local gen=aw._animGen",
+					"if aw._animTweens then for _,tw in ipairs(aw._animTweens) do pcall(function() tw:Cancel() end) end end",
+					"local tweens={}",
+					"aw._animTweens=tweens",
 					"task.spawn(function()",
 					"if aw.OnOpenCallback then task.spawn(function() " .. safeObj .. ".SafeCallback(aw.OnOpenCallback) end) end",
 					"task.wait(0.06)",
-					"if aw._animGen~=_gen or aw.Destroyed then return end",
+					"if aw._animGen~=gen or aw.Destroyed then return end",
 					"aw.Closed=false",
-					"local _main=aw.UIElements.Main",
-					"local _bg=_main and _main:FindFirstChild\"Background\"",
-					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",true) _bg.Size=UDim2.new(1,0,1,0) end",
-					"_main.Size=UDim2.new(aw.Size.X.Scale,aw.Size.X.Offset,0,100)",
-					"local _origMB=aw._origMainBarSize or (aw.UIElements.MainBar and aw.UIElements.MainBar.Size)",
-					"local _origSB=aw._origSideBarSize or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.Size)",
-					"aw._origMainBarSize=_origMB",
-					"aw._origSideBarSize=_origSB",
-					"local _openFinalH=aw.Size.Y.Offset",
-					"local _sbW=aw.SideBarWidth or (_origSB and _origSB.X.Offset>0 and _origSB.X.Offset) or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.AbsoluteSize.X) or 200",
-					"if aw.UIElements.MainBar and aw.UIElements.SideBarContainer and _origMB and _origSB then",
-					"aw.UIElements.MainBar.Size=UDim2.new(1,-_sbW,0,_openFinalH-aw.Topbar.Height)",
-					"aw.UIElements.SideBarContainer.Size=UDim2.new(0,_sbW,0,_origSB.Y.Offset+_origSB.Y.Scale*_openFinalH)",
+					"local main=aw.UIElements.Main",
+					"local bg=main and main:FindFirstChild\"Background\"",
+					"if bg then bg:SetAttribute(\"_fnPauseShape\",true) bg.Size=UDim2.new(1,0,1,0) end",
+					"main.Size=UDim2.new(aw.Size.X.Scale,aw.Size.X.Offset,0,100)",
+					"local mainBarSize=aw._origMainBarSize or (aw.UIElements.MainBar and aw.UIElements.MainBar.Size)",
+					"local sideBarSize=aw._origSideBarSize or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.Size)",
+					"aw._origMainBarSize=mainBarSize",
+					"aw._origSideBarSize=sideBarSize",
+					"local targetH=aw.Size.Y.Offset",
+					"local sideBarW=aw.SideBarWidth or (sideBarSize and sideBarSize.X.Offset>0 and sideBarSize.X.Offset) or (aw.UIElements.SideBarContainer and aw.UIElements.SideBarContainer.AbsoluteSize.X) or 200",
+					"if aw.UIElements.MainBar and aw.UIElements.SideBarContainer and mainBarSize and sideBarSize then",
+					"aw.UIElements.MainBar.Size=UDim2.new(1,-sideBarW,0,targetH-aw.Topbar.Height)",
+					"aw.UIElements.SideBarContainer.Size=UDim2.new(0,sideBarW,0,sideBarSize.Y.Offset+sideBarSize.Y.Scale*targetH)",
 					"end",
-					"local _tOpen=" .. twFn .. "(_main,0.8,{Size=aw.Size},Enum.EasingStyle.Quint,Enum.EasingDirection.Out)",
-					"table.insert(_tws,_tOpen)",
-					"_tOpen:Play()",
-					"_tOpen.Completed:Connect(function()",
-					"if aw._animGen~=_gen or aw.Closed or aw.Destroyed then return end",
-					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",nil) end",
-					"if aw.UIElements and aw.UIElements.MainBar and aw.UIElements.SideBarContainer and _origMB and _origSB then",
-					"aw.UIElements.MainBar.Size=_origMB",
-					"aw.UIElements.SideBarContainer.Size=_origSB",
+					"local openTween=" .. twFn .. "(main,0.8,{Size=aw.Size},Enum.EasingStyle.Quint,Enum.EasingDirection.Out)",
+					"table.insert(tweens,openTween)",
+					"openTween:Play()",
+					"openTween.Completed:Connect(function()",
+					"if aw._animGen~=gen or aw.Closed or aw.Destroyed then return end",
+					"if bg then bg:SetAttribute(\"_fnPauseShape\",nil) end",
+					"if aw.UIElements and aw.UIElements.MainBar and aw.UIElements.SideBarContainer and mainBarSize and sideBarSize then",
+					"aw.UIElements.MainBar.Size=mainBarSize",
+					"aw.UIElements.SideBarContainer.Size=sideBarSize",
 					"end",
 					"end)",
-					"if aw.UIElements.BackgroundGradient then local _tG=" .. twFn .. "(aw.UIElements.BackgroundGradient,0.2,{ImageTransparency=0},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tG) _tG:Play() end",
-					"if _bg then _bg.ImageTransparency=1 local _tB=" .. twFn .. "(_bg,0.4,{ImageTransparency=aw.Transparent and " .. wuiObj .. ".WindUI.TransparencyValue or 0},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(_tws,_tB) _tB:Play() end",
-					"if " .. bgImg .. " then if " .. bgImg .. ":IsA\"VideoFrame\" then " .. bgImg .. ".Visible=true else local _tL=" .. twFn .. "(" .. bgImg .. ",0.2,{ImageTransparency=aw.BackgroundImageTransparency},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tL) _tL:Play() end end",
+					"if aw.UIElements.BackgroundGradient then local tw=" .. twFn .. "(aw.UIElements.BackgroundGradient,0.2,{ImageTransparency=0},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end",
+					"if bg then bg.ImageTransparency=1 local tw=" .. twFn .. "(bg,0.4,{ImageTransparency=aw.Transparent and " .. wuiObj .. ".WindUI.TransparencyValue or 0},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end",
+					"if " .. bgImg .. " then if " .. bgImg .. ":IsA\"VideoFrame\" then " .. bgImg .. ".Visible=true else local tw=" .. twFn .. "(" .. bgImg .. ",0.2,{ImageTransparency=aw.BackgroundImageTransparency},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end end",
 					"if aw.OpenButtonMain and aw.IsOpenButtonEnabled then aw.OpenButtonMain:Visible(false) end",
-					"if " .. shadowImg .. " then local _tD=" .. twFn .. "(" .. shadowImg .. ",0.25,{ImageTransparency=aw.ShadowTransparency},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tD) _tD:Play() end",
-					"if " .. dragBar .. " then local _tU=" .. twFn .. "(" .. dragBar .. ",0.45,{Size=UDim2.new(0,aw.DragFrameSize,0,4),ImageTransparency=0.8},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(_tws,_tU) _tU:Play() end",
+					"if " .. shadowImg .. " then local tw=" .. twFn .. "(" .. shadowImg .. ",0.25,{ImageTransparency=aw.ShadowTransparency},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end",
+					"if " .. dragBar .. " then local tw=" .. twFn .. "(" .. dragBar .. ",0.45,{Size=UDim2.new(0,aw.DragFrameSize,0,4),ImageTransparency=0.8},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end",
 					stateBool .. ":Set(true)",
-					"if aw.Resizable and " .. resizer .. " and " .. resizer .. ".ImageLabel then local _tAz=" .. twFn .. "(" .. resizer .. ".ImageLabel,0.45,{ImageTransparency=0.8},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(_tws,_tAz) _tAz:Play() aw.CanResize=true end",
+					"if aw.Resizable and " .. resizer .. " and " .. resizer .. ".ImageLabel then local tw=" .. twFn .. "(" .. resizer .. ".ImageLabel,0.45,{ImageTransparency=0.8},Enum.EasingStyle.Exponential,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() aw.CanResize=true end",
 					"aw.CanDropdown=true",
-					"_main.Visible=true",
-					"local _inner=_main:WaitForChild\"Main\"",
-					"if _inner then _inner.Visible=true end",
+					"main.Visible=true",
+					"local inner=main:WaitForChild\"Main\"",
+					"if inner then inner.Visible=true end",
 					wuiObj .. ".WindUI:ToggleAcrylic(true)",
 					"end)",
 					"end",
@@ -767,56 +768,100 @@ do
 					"if aw.Destroyed then return end",
 					"local " .. closeRet .. "={}",
 					"aw._animGen=(aw._animGen or 0)+1",
-					"local _gen=aw._animGen",
-					"if aw._animTweens then for _,_tw in ipairs(aw._animTweens) do pcall(function() _tw:Cancel() end) end end",
-					"local _tws={}",
-					"aw._animTweens=_tws",
+					"local gen=aw._animGen",
+					"if aw._animTweens then for _,tw in ipairs(aw._animTweens) do pcall(function() tw:Cancel() end) end end",
+					"local tweens={}",
+					"aw._animTweens=tweens",
 					"if aw.OnCloseCallback then task.spawn(function() " .. safeObj .. ".SafeCallback(aw.OnCloseCallback) end) end",
 					wuiObj .. ".WindUI:ToggleAcrylic(false)",
 					"aw.CanDropdown=false",
 					"aw.Closed=true",
 					stateBool .. ":Set(false)",
 					"aw.CanResize=false",
-					"local _main=aw.UIElements.Main",
-					"local _innerMain=_main and _main:FindFirstChild\"Main\"",
-					"if _innerMain then _innerMain.Visible=false end",
-					"local _bg=_main and _main:FindFirstChild\"Background\"",
-					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",true) end",
-					"local _tClose=nil",
-					"if " .. shadowImg .. " then local _tD=" .. twFn .. "(" .. shadowImg .. ",0.15,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tD) _tD:Play() _tClose=_tD end",
-					"if aw.UIElements.BackgroundGradient then local _tG=" .. twFn .. "(aw.UIElements.BackgroundGradient,0.16,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tG) _tG:Play() end",
-					"if _bg then local _tB=" .. twFn .. "(_bg,0.20,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tB) _tB:Play() _tClose=_tB end",
-					"if " .. bgImg .. " then if " .. bgImg .. ":IsA\"VideoFrame\" then " .. bgImg .. ".Visible=false else local _tL=" .. twFn .. "(" .. bgImg .. ",0.18,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tL) _tL:Play() end end",
-					"if " .. dragBar .. " then local _tU=" .. twFn .. "(" .. dragBar .. ",0.18,{Size=UDim2.new(0,0,0,4),ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tU) _tU:Play() end",
-					"if " .. resizer .. " and " .. resizer .. ".ImageLabel then local _tAz=" .. twFn .. "(" .. resizer .. ".ImageLabel,0.16,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(_tws,_tAz) _tAz:Play() end",
-					"local function _finishClose()",
-					"if aw._animGen~=_gen or not aw.Closed or aw.Destroyed then return end",
-					"if _main then _main.Visible=false _main.Size=aw.Size end",
-					"if _bg then _bg:SetAttribute(\"_fnPauseShape\",nil) end",
+					"local main=aw.UIElements.Main",
+					"local inner=main and main:FindFirstChild\"Main\"",
+					"if inner then inner.Visible=false end",
+					"local bg=main and main:FindFirstChild\"Background\"",
+					"if bg then bg:SetAttribute(\"_fnPauseShape\",true) end",
+					"local closeTween=nil",
+					"if " .. shadowImg .. " then local tw=" .. twFn .. "(" .. shadowImg .. ",0.15,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() closeTween=tw end",
+					"if aw.UIElements.BackgroundGradient then local tw=" .. twFn .. "(aw.UIElements.BackgroundGradient,0.16,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end",
+					"if bg then local tw=" .. twFn .. "(bg,0.20,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() closeTween=tw end",
+					"if " .. bgImg .. " then if " .. bgImg .. ":IsA\"VideoFrame\" then " .. bgImg .. ".Visible=false else local tw=" .. twFn .. "(" .. bgImg .. ",0.18,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end end",
+					"if " .. dragBar .. " then local tw=" .. twFn .. "(" .. dragBar .. ",0.18,{Size=UDim2.new(0,0,0,4),ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end",
+					"if " .. resizer .. " and " .. resizer .. ".ImageLabel then local tw=" .. twFn .. "(" .. resizer .. ".ImageLabel,0.16,{ImageTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.Out) table.insert(tweens,tw) tw:Play() end",
+					"local function finishClose()",
+					"if aw._animGen~=gen or not aw.Closed or aw.Destroyed then return end",
+					"if main then main.Visible=false main.Size=aw.Size end",
+					"if bg then bg:SetAttribute(\"_fnPauseShape\",nil) end",
 					"if aw.OpenButtonMain and not aw.Destroyed and not aw.IsPC and aw.IsOpenButtonEnabled then aw.OpenButtonMain:Visible(true) end",
 					"end",
-					"if _tClose then _tClose.Completed:Connect(_finishClose) else _finishClose() end",
+					"if closeTween then closeTween.Completed:Connect(finishClose) else finishClose() end",
 				}, "\n")
 				str2 = str2:sub(1, closeStart - 1) .. newClose .. str2:sub(closeEnd + 1)
 			end
 
-			str2 = replaceExact(str2, "if ah.Hover then\naa.AddSignal(d.MouseEnter,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\naa.AddSignal(d.MouseMoved,function(g,h)\naB.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\naA.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend", "if ah.Hover then\nlocal _shineConn\naa.AddSignal(d.MouseEnter,function()\nif am then\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\nif _shineConn then _shineConn:Disconnect() _shineConn=nil end\n_shineConn=aa.AddSignal(d.MouseMoved,function(g,h)\nlocal _dw=d.AbsoluteSize.X\nif _dw>0 then\nlocal _off=((g-d.AbsolutePosition.X)/_dw)-0.5\naB.HoverGradient.Offset=Vector2.new(_off,0)\naA.HoverGradient.Offset=Vector2.new(_off,0)\nend\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif _shineConn then _shineConn:Disconnect() _shineConn=nil end\nif am then\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend")
+			str2 = replaceExact(str2, "if ah.Hover then\naa.AddSignal(d.MouseEnter,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\naa.AddSignal(d.MouseMoved,function(g,h)\naB.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\naA.HoverGradient.Offset=\nVector2.new(((g-d.AbsolutePosition.X)/d.AbsoluteSize.X)-0.5,0)\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif am then\n\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend", "if ah.Hover then\nlocal shineConn\naa.AddSignal(d.MouseEnter,function()\nif am then\nad(aB,0.12,{ImageTransparency=0.9}):Play()\nad(aA,0.12,{ImageTransparency=0.8}):Play()\nif shineConn then shineConn:Disconnect() shineConn=nil end\nshineConn=aa.AddSignal(d.MouseMoved,function(g,h)\nlocal w=d.AbsoluteSize.X\nif w>0 then\nlocal off=((g-d.AbsolutePosition.X)/w)-0.5\naB.HoverGradient.Offset=Vector2.new(off,0)\naA.HoverGradient.Offset=Vector2.new(off,0)\nend\nend)\nend\nend)\naa.AddSignal(d.InputEnded,function()\nif shineConn then shineConn:Disconnect() shineConn=nil end\nif am then\nad(aB,0.12,{ImageTransparency=1}):Play()\nad(aA,0.12,{ImageTransparency=1}):Play()\nend\nend)\nend")
 			str2 = replaceExact(str2, "for ar,as in next,ao.Tabs do\nif not as.Locked then", "for ar,as in next,ao.Tabs do\nif as.Selected and ar~=aq and not as.Locked then")
 			str2 = replaceExact(str2, "task.spawn(function()\nfor ar,as in next,ao.Containers do\nas.AnchorPoint=Vector2.new(0,0.05)\nas.Visible=false\nend\nao.Containers[aq].Visible=true\nlocal ar=game:GetService\"TweenService\"\n\nlocal as=TweenInfo.new(0.15,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)\nlocal at=ar:Create(ao.Containers[aq],as,{\nAnchorPoint=Vector2.new(0,0),\n})\nat:Play()\nend)", "task.spawn(function()\nfor ar,as in next,ao.Containers do\nas.Position=UDim2.new(0,0,0,14)\nas.Visible=false\nend\nao.Containers[aq].Position=UDim2.new(0,0,0,14)\nao.Containers[aq].Visible=true\nlocal ar=game:GetService\"TweenService\"\n\nlocal as=TweenInfo.new(0.15,Enum.EasingStyle.Quart,Enum.EasingDirection.Out)\nlocal at=ar:Create(ao.Containers[aq],as,{\nPosition=UDim2.new(0,0,0,0),\n})\nat:Play()\nend)")
-			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Toggle\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "-- dup glass tween removed")
-			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Text\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0.85},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "-- dup glass tween removed")
+			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Toggle\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "")
+			str2 = replaceExact(str2, "ab.SetThemeTag(aq.Frame.Bar.Highlight.Glass,{ImageColor3=\"Text\"},0.1)\nad(\naq.Frame.Bar.Highlight.Glass,\n0.1,\n{ImageTransparency=0.85},\nEnum.EasingStyle.Quint,\nEnum.EasingDirection.Out\n):Play()", "")
 			str2 = replaceExact(str2, "else\nfor aB,b in next,ap.Tabs do\nam(b.UIElements.TabItem,0.1,{ImageTransparency=1}):Play()\n\nam(\nb.UIElements.TabItem.Frame.Title.TextLabel,\n0.1,\n{TextTransparency=0.4}\n):Play()\nif b.UIElements.TabIcon then\nam(b.UIElements.TabIcon.ImageLabel,0.1,{ImageTransparency=0.2}):Play()\nend\nb.Selected=false\nend\naz.Selected=true", "else\nfor aB,b in next,ap.Tabs do\nif b.Selected and b~=az then\nam(b.UIElements.TabItem,0.1,{ImageTransparency=1}):Play()\nam(\nb.UIElements.TabItem.Frame.Title.TextLabel,\n0.1,\n{TextTransparency=0.4}\n):Play()\nif b.UIElements.TabIcon then\nam(b.UIElements.TabIcon.ImageLabel,0.1,{ImageTransparency=0.2}):Play()\nend\nb.Selected=false\nend\nend\naz.Selected=true")
-			str2 = str2:gsub("function UpdatePosition%(%)\nlocal ([%w_]+)=([%w_]+)%.UIElements%.Dropdown or ([%w_]+)%.DropdownFrame%.UIElements%.Main", function(v1, v2, v3)
-				return "function UpdatePosition()\nif not " .. v2 .. ".Opened and not (" .. v2 .. ".UIElements.MenuCanvas and " .. v2 .. ".UIElements.MenuCanvas.Visible) then return end\nlocal " .. v1 .. "=" .. v2 .. ".UIElements.Dropdown or " .. v3 .. ".DropdownFrame.UIElements.Main"
+			str2 = str2:gsub("function UpdatePosition%(%)\nlocal ([%w_]+)=([%w_]+)%.UIElements%.Dropdown or ([%w_]+)%.DropdownFrame%.UIElements%.Main\nlocal ([%w_]+)=%2%.UIElements%.MenuCanvas\n\nlocal [%w_]+=([%w_]+)%.ViewportSize%.Y\n%-([%(%w_%.%+%)%s]+)\n%-([%w_]+)%.MenuPadding.-\nend", function(btnVar, ddVar, _, mcVar, camVar, _, cfgVar)
+				return table.concat({
+					"local function UpdatePosition()",
+					"if not " .. ddVar .. ".Opened and not (" .. ddVar .. ".UIElements.MenuCanvas and " .. ddVar .. ".UIElements.MenuCanvas.Visible) then return end",
+					"local " .. btnVar .. "=" .. ddVar .. ".UIElements.Dropdown or " .. ddVar .. ".DropdownFrame.UIElements.Main",
+					"local " .. mcVar .. "=" .. ddVar .. ".UIElements.MenuCanvas",
+					"if not " .. btnVar .. " or not " .. mcVar .. " then return end",
+					"local guiPos=" .. mcVar .. ".Parent and " .. mcVar .. ".Parent.AbsolutePosition or Vector2.new(0,-58)",
+					"local insetY=-guiPos.Y",
+					"local avail=" .. camVar .. ".ViewportSize.Y-(" .. btnVar .. ".AbsolutePosition.Y+" .. btnVar .. ".AbsoluteSize.Y)-" .. cfgVar .. ".MenuPadding-insetY",
+					"local need=" .. mcVar .. ".AbsoluteSize.Y+" .. cfgVar .. ".MenuPadding",
+					"local shift=-insetY",
+					"if avail<need then shift=need-avail-insetY end",
+					mcVar .. ".Position=UDim2.new(0," .. btnVar .. ".AbsolutePosition.X+" .. btnVar .. ".AbsoluteSize.X-guiPos.X,0," .. btnVar .. ".AbsolutePosition.Y+" .. btnVar .. ".AbsoluteSize.Y-shift+(" .. cfgVar .. ".MenuPadding*2))",
+					"end",
+				}, "\n")
+			end, 1)
+			str2 = str2:gsub("(RecalculateListSize%(%)\nRecalculateCanvasSize%(%)\n\nfunction [%w_]+%.Open%([%w_]+%).-)(UpdatePosition%(%))(\nend\nend)", function(head, upd, tail)
+				local ddVar = head:match("([%w_]+)%.UIElements%.Menu%.Visible=true") or "ap"
+				return head
+					.. ddVar .. "._openGen=(" .. ddVar .. "._openGen or 0)+1\n"
+					.. "RecalculateListSize()\nRecalculateCanvasSize()\n" .. upd .. "\n"
+					.. "local rs=game:GetService\"RunService\"\n"
+					.. "if " .. ddVar .. "._posConn then " .. ddVar .. "._posConn:Disconnect() " .. ddVar .. "._posConn=nil end\n"
+					.. "local target=" .. ddVar .. ".UIElements.Dropdown or " .. ddVar .. ".DropdownFrame.UIElements.Main\n"
+					.. "local layout=" .. ddVar .. ".UIElements.UIListLayout\n"
+					.. "local lastPos=target and target.AbsolutePosition\n"
+					.. "local lastSize=target and target.AbsoluteSize\n"
+					.. "local lastContent=layout and layout.AbsoluteContentSize.Y\n"
+					.. ddVar .. "._posConn=rs.RenderStepped:Connect(function()\n"
+					.. "local mc=" .. ddVar .. ".UIElements and " .. ddVar .. ".UIElements.MenuCanvas\n"
+					.. "if not mc or not mc.Visible or not target or not target.Parent then\n"
+					.. "if " .. ddVar .. "._posConn then " .. ddVar .. "._posConn:Disconnect() " .. ddVar .. "._posConn=nil end\n"
+					.. "return\nend\n"
+					.. "local curPos,curSize=target.AbsolutePosition,target.AbsoluteSize\n"
+					.. "local curContent=layout and layout.AbsoluteContentSize.Y\n"
+					.. "if curContent~=lastContent then lastContent=curContent RecalculateListSize() RecalculateCanvasSize() " .. upd .. " elseif curPos~=lastPos or curSize~=lastSize then lastPos=curPos lastSize=curSize " .. upd .. " end\nend)\n"
+					.. "rs.Heartbeat:Once(function()\nlocal mc=" .. ddVar .. ".UIElements and " .. ddVar .. ".UIElements.MenuCanvas\nif mc and mc.Visible then RecalculateListSize() RecalculateCanvasSize() " .. upd .. " end\nend)"
+					.. tail
+			end, 1)
+			str2 = str2:gsub("(function [%w_]+%.Close%([%w_]+%)\n)([%w_]+)%.Opened=false(.-)task%.spawn%(function%(%)\ntask%.wait%(0%.1%)\n%2%.UIElements%.Menu%.Visible=false\nend%)\n\ntask%.spawn%(function%(%)\ntask%.wait%(0%.25%)\n%2%.UIElements%.MenuCanvas%.Visible=false\n%2%.UIElements%.MenuCanvas%.Active=false\nend%)", function(fnHead, ddVar, mid)
+				return fnHead
+					.. ddVar .. ".Opened=false\nlocal closeGen=" .. ddVar .. "._openGen or 0\n"
+					.. "if " .. ddVar .. "._posConn then " .. ddVar .. "._posConn:Disconnect() " .. ddVar .. "._posConn=nil end"
+					.. mid
+					.. "task.spawn(function()\ntask.wait(0.1)\nif not " .. ddVar .. ".Opened and (" .. ddVar .. "._openGen or 0)==closeGen then\n" .. ddVar .. ".UIElements.Menu.Visible=false\nend\nend)\n\ntask.spawn(function()\ntask.wait(0.25)\nif not " .. ddVar .. ".Opened and (" .. ddVar .. "._openGen or 0)==closeGen then\n" .. ddVar .. ".UIElements.MenuCanvas.Visible=false\n" .. ddVar .. ".UIElements.MenuCanvas.Active=false\nend\nend)"
 			end, 1)
 			str2 = replaceExact(str2, "if aA~=aq then\nag(al.UIElements.SliderIcon.Frame,0.05,{Size=UDim2.new(d,0,1,0)}):Play()", "if aA~=aq then\nal.UIElements.SliderIcon.Frame.Size=UDim2.new(d,0,1,0)")
 			str2 = replaceExact(str2, "if aA~=aq then\nag(al.UIElements.SliderIcon.Frame,0.05,{Size=UDim2.new(g,0,1,0)}):Play()", "if aA~=aq then\nal.UIElements.SliderIcon.Frame.Size=UDim2.new(g,0,1,0)")
 
 			str2 = str2:gsub("for ([%w_]+),([%w_]+) in next,%(([%w_]+)%.__elements or{}%)do\nif ([%w_]+)%.Elements%[%1%]and ([%w_]+)%.Parser%[%2%.__type%]then\ntask%.spawn%(function%(%)\n%5%.Parser%[%2%.__type%]%.Load%(%4%.Elements%[%1%],%2%)\nend%)\nend\nend", function(kVar, vVar, dataVar, cfgVar, mgrVar)
-				return "task.spawn(function()\nlocal _rs=game:GetService\"RunService\"\nlocal _t0=os.clock()\nfor " .. kVar .. "," .. vVar .. " in next,(" .. dataVar .. ".__elements or{})do\nif " .. cfgVar .. ".Elements[" .. kVar .. "]and " .. mgrVar .. ".Parser[" .. vVar .. ".__type]then\npcall(" .. mgrVar .. ".Parser[" .. vVar .. ".__type].Load," .. cfgVar .. ".Elements[" .. kVar .. "]," .. vVar .. ")\nif os.clock()-_t0>=0.004 then\n_rs.Heartbeat:Wait()\n_t0=os.clock()\nend\nend\nend\nend)"
+				return "task.spawn(function()\nlocal rs=game:GetService\"RunService\"\nlocal t0=os.clock()\nfor " .. kVar .. "," .. vVar .. " in next,(" .. dataVar .. ".__elements or{})do\nif " .. cfgVar .. ".Elements[" .. kVar .. "]and " .. mgrVar .. ".Parser[" .. vVar .. ".__type]then\npcall(" .. mgrVar .. ".Parser[" .. vVar .. ".__type].Load," .. cfgVar .. ".Elements[" .. kVar .. "]," .. vVar .. ")\nif os.clock()-t0>=0.004 then\nrs.Heartbeat:Wait()\nt0=os.clock()\nend\nend\nend\nend)"
 			end, 1)
 
-			return "--[[FN_WUI_PATCH_V5]]\n" .. str2
+			return str2
 		end
 
 		local function compileSource(src)
@@ -827,25 +872,20 @@ do
 			if okPatch and type(str2) == "string" then
 				local okLoad, chunk = pcall(loadstring, str2)
 				if okLoad and type(chunk) == "function" then
-					return chunk, str2
+					return chunk
 				end
 			end
 			local okRaw, rawChunk = pcall(loadstring, src)
 			if okRaw and type(rawChunk) == "function" then
-				return rawChunk, src
+				return rawChunk
 			end
 			return nil
 		end
 
 		local chunk = nil
 		local cached = tryReadCache()
-		local stalePatchedCache = cached and (cached:find("--[Foxname WindUI Patched]--", 1, true) or cached:find("--[[FN_WUI_PATCH_V2]]", 1, true) or cached:find("--[[FN_WUI_PATCH_V3]]", 1, true) or cached:find("--[[FN_WUI_PATCH_V4]]", 1, true)) and not cached:find("--[[FN_WUI_PATCH_V5]]", 1, true)
-		if cached and not stalePatchedCache then
-			local compiledChunk, patchedSrc = compileSource(cached)
-			chunk = compiledChunk
-			if chunk and patchedSrc and patchedSrc ~= cached then
-				tryWriteCache(patchedSrc)
-			end
+		if cached then
+			chunk = compileSource(cached)
 		end
 
 		if not chunk then
@@ -876,10 +916,10 @@ do
 					end
 
 					if body then
-						local compiledChunk, patchedSrc = compileSource(body)
+						local compiledChunk = compileSource(body)
 						if compiledChunk then
 							chunk = compiledChunk
-							tryWriteCache(patchedSrc or body)
+							tryWriteCache(body)
 							break
 						end
 					end
@@ -895,11 +935,7 @@ do
 		end
 
 		if not chunk and cached then
-			local compiledChunk, patchedSrc = compileSource(cached)
-			chunk = compiledChunk
-			if chunk and patchedSrc and patchedSrc ~= cached then
-				tryWriteCache(patchedSrc)
-			end
+			chunk = compileSource(cached)
 		end
 
 		if not chunk then
@@ -1165,10 +1201,14 @@ do
 	local function fn24(arg, arg2)
 		if arg then
 			local guild = arg.guild
+			local icon = type(guild.icon) == "string"
+				and ("https://cdn.discordapp.com/icons/" .. tostring(guild.id) .. "/" .. guild.icon .. ".png?size=1024")
+				or "messages-square"
 
 			pcall(function()
 				v11:SetTitle(tostring(guild.name or "Foxname Community"))
 				v11:SetDesc("<font color=\"#22C55E\"><b>LIVE</b></font>  Foxname community server" .. "\nMembers: " .. tostring(arg.approximate_member_count or "?") .. "  |  Online: " .. tostring(arg.approximate_presence_count or "?") .. "\n<font color=\"#94A3B8\">discord.gg/" .. str2 .. "</font>")
+				v11:SetImage(icon, 42)
 			end)
 
 			if arg2 then
@@ -2771,6 +2811,7 @@ Hub.CoinFarm.ReleaseTravelNoclip = function(nudgeOutOfWall)
 	if Hub.CoinFarm._travelCleanup == Hub.CoinFarm.ReleaseTravelNoclip then
 		Hub.CoinFarm._travelCleanup = nil
 	end
+	Hub.CoinFarm._travelHoldCFrame = nil
 	local character = Hub.CoinFarm._travelCharacter or (localPlayer and localPlayer.Character)
 	Hub.CoinFarm._travelCharacter = nil
 	local hum = character and character:FindFirstChildOfClass("Humanoid")
@@ -2808,6 +2849,13 @@ Hub.CoinFarm.ReleaseTravelNoclip = function(nudgeOutOfWall)
 	end
 	local isUnder = Hub.CoinFarm.position == "Under" or Hub.CoinFarm.mode == "Tween" or Hub.CoinFarm.escapeUnderActive
 	if not Hub.CoinFarm.enabled or not isUnder then
+		if Hub.CoinFarm.stabilizer then
+			pcall(function()
+				Hub.CoinFarm.stabilizer:Destroy()
+			end)
+			Hub.CoinFarm.stabilizer = nil
+		end
+		Hub.CoinFarm.stabilizerRoot = nil
 		if hum and hum.Parent and not Hub.FlyEnabled then
 			hum.PlatformStand = false
 		end
@@ -2822,9 +2870,12 @@ Hub.CoinFarm.ReleaseTravelNoclip = function(nudgeOutOfWall)
 	table.clear(Hub.CoinFarm._travelParts)
 end
 
-Hub.CoinFarm.EnforceTravelNoclip = function(character)
+Hub.CoinFarm.EnforceTravelNoclip = function(character, holdCF)
 	if not character or not character.Parent then
 		return
+	end
+	if typeof(holdCF) == "CFrame" then
+		Hub.CoinFarm._travelHoldCFrame = holdCF
 	end
 	local saved = Hub.CoinFarm._travelParts
 	if Hub.CoinFarm._travelCharacter ~= character then
@@ -2843,9 +2894,34 @@ Hub.CoinFarm.EnforceTravelNoclip = function(character)
 			end
 		end
 		local h = c:FindFirstChildOfClass("Humanoid")
+		local hrp = c:FindFirstChild("HumanoidRootPart")
 		local underNow = Hub.CoinFarm.position == "Under" or Hub.CoinFarm.mode == "Tween" or Hub.CoinFarm.escapeUnderActive
-		if not underNow and h and h.Parent and not h.PlatformStand then
-			h.PlatformStand = true
+		if not underNow then
+			if h and h.Parent and not h.PlatformStand then
+				h.PlatformStand = true
+			end
+			if hrp and hrp.Parent then
+				if not Hub.CoinFarm.stabilizer or Hub.CoinFarm.stabilizer.Parent ~= hrp or Hub.CoinFarm.stabilizerRoot ~= hrp then
+					if Hub.CoinFarm.stabilizer then
+						pcall(function()
+							Hub.CoinFarm.stabilizer:Destroy()
+						end)
+					end
+					local bv = Instance.new("BodyVelocity")
+					bv.Name = "FoxnameCoinFarmStabilizer"
+					bv.Velocity = Vector3.zero
+					bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+					bv.P = 90000
+					bv.Parent = hrp
+					Hub.CoinFarm.stabilizer = bv
+					Hub.CoinFarm.stabilizerRoot = hrp
+				end
+				hrp.AssemblyLinearVelocity = Vector3.zero
+				hrp.AssemblyAngularVelocity = Vector3.zero
+				if Hub.CoinFarm._travelHoldCFrame and not Hub.CoinFarm.activeTween then
+					hrp.CFrame = Hub.CoinFarm._travelHoldCFrame
+				end
+			end
 		end
 	end
 	applyPass(character)
@@ -2885,22 +2961,25 @@ Hub.CoinFarm.DisableUnder = function()
 		Hub.CoinFarm.underPoseConnection = nil
 	end
 
-	if Hub.CoinFarm.stabilizer then
-		pcall(function()
-			Hub.CoinFarm.stabilizer:Destroy()
-		end)
+	local travelActive = Hub.CoinFarm._travelNoclipConn and Hub.CoinFarm._travelNoclipConn.Connected
+	if not travelActive then
+		if Hub.CoinFarm.stabilizer then
+			pcall(function()
+				Hub.CoinFarm.stabilizer:Destroy()
+			end)
 
-		Hub.CoinFarm.stabilizer = nil
+			Hub.CoinFarm.stabilizer = nil
+		end
+
+		Hub.CoinFarm.stabilizerRoot = nil
 	end
-
-	Hub.CoinFarm.stabilizerRoot = nil
 	Hub.CoinFarm.preCoinHoverActive = false
 
 	local prevChar = Hub.CoinFarm.underCharacter or (localPlayer and localPlayer.Character)
 	if prevChar and prevChar.Parent then
 		local prevHum = prevChar:FindFirstChildOfClass("Humanoid")
 		local prevRoot = prevChar:FindFirstChild("HumanoidRootPart")
-		if prevHum and not Hub.FlyEnabled then
+		if prevHum and not Hub.FlyEnabled and not travelActive then
 			prevHum.PlatformStand = false
 		end
 		if prevRoot and prevRoot.Parent then
@@ -3128,20 +3207,7 @@ Hub.CoinFarm.MaintainPreCoinHover = function(phaseText)
 	if isUnder then
 		Hub.CoinFarm.EnableUnder(character, true, true)
 	else
-		Hub.CoinFarm.EnforceTravelNoclip(character)
-		if not Hub.CoinFarm.stabilizer or Hub.CoinFarm.stabilizer.Parent ~= hrp or Hub.CoinFarm.stabilizerRoot ~= hrp then
-			if Hub.CoinFarm.stabilizer then
-				pcall(function() Hub.CoinFarm.stabilizer:Destroy() end)
-			end
-			local bv = Instance.new("BodyVelocity")
-			bv.Name = "FoxnameCoinFarmStabilizer"
-			bv.Velocity = Vector3.zero
-			bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-			bv.P = 90000
-			bv.Parent = hrp
-			Hub.CoinFarm.stabilizer = bv
-			Hub.CoinFarm.stabilizerRoot = hrp
-		end
+		Hub.CoinFarm.EnforceTravelNoclip(character, hoverCF)
 	end
 
 	hrp.AssemblyLinearVelocity = Vector3.zero
@@ -3621,6 +3687,7 @@ Hub.CoinFarm.EscapeMurderer = function(arg, arg2)
 			Hub.CoinFarm.stabilizer = nil
 		end
 		Hub.CoinFarm.stabilizerRoot = nil
+		Hub.CoinFarm._travelHoldCFrame = nil
 
 		arg.AssemblyLinearVelocity = Vector3.zero
 		arg.AssemblyAngularVelocity = Vector3.zero
@@ -5006,6 +5073,7 @@ Hub.CoinFarm.LeaveUnderSafely = function(arg, arg2)
 		end
 	end
 
+	Hub.CoinFarm.ReleaseTravelNoclip(false)
 	Hub.CoinFarm.DisableUnder()
 
 	if flag8 and humanoidRootPart and humanoidRootPart.Parent then
@@ -5113,6 +5181,9 @@ Hub.CoinFarm.Teleport = function(self, targetCF)
 	end
 
 	self.currentCFrame = targetCF
+	if self._travelHoldCFrame ~= nil then
+		self._travelHoldCFrame = targetCF
+	end
 	if self.teleportHistory then
 		table.insert(self.teleportHistory, targetCF)
 	end
@@ -5158,9 +5229,13 @@ Hub.CoinFarm.TouchCoin = function(arg, arg2, arg3, inFlight)
 
 	if not inFlight and Hub.CoinFarm.movementMode ~= "Continuous" and rootPart and character then
 		local isUnder = Hub.CoinFarm.position == "Under" or Hub.CoinFarm.escapeCoin == coinPart
+		local targetCF = Hub.CoinFarm.GetTravelCFrame(Hub.CoinFarm.GetTargetPosition(character, rootPart, coinPart, Hub.CoinFarm.escapeCoin == coinPart and "Under" or nil), isUnder)
 		rootPart.AssemblyLinearVelocity = Vector3.zero
 		rootPart.AssemblyAngularVelocity = Vector3.zero
-		rootPart.CFrame = Hub.CoinFarm.GetTravelCFrame(Hub.CoinFarm.GetTargetPosition(character, rootPart, coinPart, Hub.CoinFarm.escapeCoin == coinPart and "Under" or nil), isUnder)
+		rootPart.CFrame = targetCF
+		if not isUnder and Hub.CoinFarm.mode == "CFrame" then
+			Hub.CoinFarm.EnforceTravelNoclip(character, targetCF)
+		end
 	end
 
 	local head = character and character:FindFirstChild("Head") or rootPart
@@ -5324,8 +5399,9 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 			Hub.CoinFarm.ReleaseTravelNoclip(false)
 			Hub.CoinFarm.EnableUnder(arg, ok, escapeUnderActive)
 		elseif ok then
-			Hub.CoinFarm.EnforceTravelNoclip(arg)
+			Hub.CoinFarm.EnforceTravelNoclip(arg, Hub.CoinFarm.GetTravelCFrame(v8, false))
 		else
+			Hub.CoinFarm._travelHoldCFrame = nil
 			if timedOut and arg3 then
 				Hub.CoinFarm.retryUntil[arg3] = os.clock() + 3.0
 			end
@@ -5342,7 +5418,7 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 	if str == "Under" or mode == "Tween" then
 		Hub.CoinFarm.EnableUnder(arg, false, escapeUnderActive)
 	else
-		Hub.CoinFarm.EnforceTravelNoclip(arg)
+		Hub.CoinFarm.EnforceTravelNoclip(arg, arg2 and arg2.CFrame)
 	end
 
 	if mode == "Tween" then
@@ -5437,7 +5513,11 @@ Hub.CoinFarm.MoveToCoin = function(arg, arg2, arg3)
 		local arrived = rem <= maxStep
 		curPos = arrived and v8 or (curPos + toTarget.Unit * maxStep)
 
-		arg2.CFrame = Hub.CoinFarm.GetTravelCFrame(curPos, str == "Under")
+		local stepCF = Hub.CoinFarm.GetTravelCFrame(curPos, str == "Under")
+		if str ~= "Under" then
+			Hub.CoinFarm._travelHoldCFrame = stepCF
+		end
+		arg2.CFrame = stepCF
 		arg2.AssemblyLinearVelocity = Vector3.zero
 		arg2.AssemblyAngularVelocity = Vector3.zero
 
@@ -9455,6 +9535,28 @@ do
 		pcall(function()
 			workspace.FallenPartsDestroyHeight = (0/0)
 		end)
+		local savedParts = {}
+		for _, child in ipairs(character_:GetDescendants()) do
+			if child:IsA("BasePart") then
+				table.insert(savedParts, { part = child, cc = child.CanCollide, cg = child.CollisionGroup })
+				pcall(function()
+					child.CollisionGroup = "Default"
+				end)
+				if child == rootPart or child.Name == "UpperTorso" or child.Name == "LowerTorso" or child.Name == "Torso" or child.Name == "Head" then
+					child.CanCollide = true
+				end
+			end
+		end
+		local function restoreFlingParts()
+			for _, entry in ipairs(savedParts) do
+				if entry.part and entry.part.Parent then
+					entry.part.CanCollide = entry.cc
+					pcall(function()
+						entry.part.CollisionGroup = entry.cg
+					end)
+				end
+			end
+		end
 		local bodyVelocity = Instance.new("BodyVelocity")
 		bodyVelocity.Parent = rootPart
 		bodyVelocity.Velocity = Vector3.zero
@@ -9468,6 +9570,7 @@ do
 		else
 			if not accessory then
 				bodyVelocity:Destroy()
+				restoreFlingParts()
 				humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
 				pcall(function()
 					workspace.FallenPartsDestroyHeight = fallenPartsDestroyHeight
@@ -9479,6 +9582,7 @@ do
 		end
 
 		bodyVelocity:Destroy()
+		restoreFlingParts()
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
 
 		if currentCamera2 then
@@ -9566,6 +9670,7 @@ do
 		local function fn43(arg5, arg6)
 			local n2 = tick() + 0.8
 			local n3 = 0
+			local maxSpeed = 0
 
 			while true do
 				if not fn41() then
@@ -9587,6 +9692,10 @@ do
 
 					if v10 and arg6 then
 						n3 = (v10.Position - arg6).Magnitude
+						local vel = v10.AssemblyLinearVelocity
+						if vel and vel.Magnitude > maxSpeed then
+							maxSpeed = vel.Magnitude
+						end
 					end
 
 					task.wait(0.1)
@@ -9597,10 +9706,15 @@ do
 				end
 			end
 
-			return n3 >= 30, false
+			return n3 >= 65 or maxSpeed >= 80, false
 		end
 
 		local flag7 = Hub.AntiFlingEnabled == true
+		local wasNoclip = Hub.NoclipEnabled == true
+		if wasNoclip and type(fn18) == "function" then
+			Hub.NoclipEnabled = false
+			fn18()
+		end
 
 		if flag7 then
 			fn37(false)
@@ -9610,6 +9724,10 @@ do
 			if not fn42() or not fn41() then
 				if Hub.AntiFlingEnabled then
 					fn37(true)
+				end
+				if wasNoclip and type(fn17) == "function" then
+					Hub.NoclipEnabled = true
+					fn17()
 				end
 
 				return false
@@ -9674,6 +9792,11 @@ do
 
 		if flag7 and Hub.AntiFlingEnabled then
 			fn37(true)
+		end
+
+		if wasNoclip and type(fn17) == "function" then
+			Hub.NoclipEnabled = true
+			fn17()
 		end
 
 		local character_ = localPlayer.Character

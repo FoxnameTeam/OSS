@@ -23,7 +23,7 @@ Every saved option has a unique `Flag` string (for example `ESP_Coin`, `Farm_Tar
 | `Settings_MobileButtonAccent` | Settings | Custom accent color for on-screen action buttons. |
 | `Visuals_Fog` | Visuals | Toggles custom environmental fog density and color. |
 
-## Configs (Settings tab, lines 20642-21778)
+## Configs (Settings tab, lines 20764-21895)
 
 | Action | Notes |
 | --- | --- |
@@ -40,7 +40,7 @@ Every saved option has a unique `Flag` string (for example `ESP_Coin`, `Farm_Tar
 
 ## WindUI & Asset Caching
 
-- **WindUI Library Cache**: Pre-patched WindUI source is cached on the executor client at `Foxname/WindUI_cache.lua` with a `--[Foxname WindUI Patched]--` header. The loader checks local cache *first*, bypassing network requests and 260KB of regex pattern evaluations on subsequent executions (<10ms load time).
+- **WindUI Library Cache**: Unpatched upstream WindUI source is cached on the executor client at `Foxname/WindUI_cache.lua` (validated via `isRawWindUI` so legacy pre-patched caches refresh automatically). Runtime patches (`patchWindUI`) apply in memory on compile without disk cache version headers.
 - **Button Assets**: Mobile button PNG icons are checked on disk (`FoxnameMM2/icons_v1/<name>.png`) before network fetching. If valid PNG data exists on disk, zero HTTP requests are issued.
 - **Core Asset Preloading**: WindUI custom fonts, squircle textures, and MM2 backgrounds are preloaded asynchronously into VRAM on startup via `ContentProvider:PreloadAsync` to eliminate first-interaction freezes.
 - **Hardware Overlay Rendering**: ESP snaplines and Aimlock FOV circle utilize Potassium's native `DrawingImmediate` hardware pipeline when available (with fallbacks to `Drawing` and Roblox `GuiObject`s), completely avoiding ScreenGui canvas dirtying.
