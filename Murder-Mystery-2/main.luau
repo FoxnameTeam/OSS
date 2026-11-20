@@ -2217,38 +2217,19 @@ Hub.AutoPrestige.SetControl = function(arg)
 	end
 end
 
-Hub.AutoPrestige.FireButton = function(arg)
-	if not arg or not arg:IsA("GuiButton") then
-		return false
-	end
-	return fireConnectionsSafely(arg, { arg.MouseButton1Click })
-end
-
 Hub.AutoPrestige.Request = function()
-	local playerGui = localPlayer:FindFirstChild("PlayerGui")
-	playerGui = playerGui and playerGui:FindFirstChild("MainGUI")
-	playerGui = playerGui and playerGui:FindFirstChild("Game")
-	local level = playerGui and playerGui:FindFirstChild("Level")
-	local tabletLevel = playerGui and playerGui:FindFirstChild("TabletLevel")
-	level = level and level:FindFirstChild("Prestige")
-
-	if not level or not level.Visible then
-		level = tabletLevel and tabletLevel:FindFirstChild("Prestige")
-	end
-
-	if level and Hub.AutoPrestige.FireButton(level) then
-		task.wait(0.1)
-		playerGui = playerGui and playerGui:FindFirstChild("Prestige")
-		if Hub.AutoPrestige.FireButton(playerGui and playerGui:FindFirstChild("Accept")) then
-			return true
-		end
-	end
-
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	remotes = remotes and remotes:FindFirstChild("Inventory")
 	remotes = remotes and remotes:FindFirstChild("Prestige")
 	if remotes and remotes:IsA("RemoteEvent") then
 		remotes:FireServer()
+		local playerGui = localPlayer:FindFirstChild("PlayerGui")
+		local mainGui = playerGui and playerGui:FindFirstChild("MainGUI")
+		local gameGui = mainGui and mainGui:FindFirstChild("Game")
+		local prestigeGui = gameGui and gameGui:FindFirstChild("Prestige")
+		if prestigeGui and prestigeGui:IsA("GuiObject") then
+			prestigeGui.Visible = false
+		end
 		return true
 	end
 	return false
@@ -2259,14 +2240,12 @@ Hub.AutoPrestige.Check = function()
 		return false
 	end
 	local v8, v9 = Hub.AutoPrestige.GetData(true)
-	if not v8 or not v9 or type(v9.GetLevel) ~= "function" then
-		return false
+	local lastKnownPrestige = tonumber(localPlayer:GetAttribute("Prestige")) or (v8 and tonumber(v8.Prestige)) or 0
+	local n3 = nil
+	if v8 and v9 and type(v9.GetLevel) == "function" then
+		n3 = tonumber(v9.GetLevel(tonumber(v8.NewXP) or 0))
 	end
-	local lastKnownPrestige = tonumber(localPlayer:GetAttribute("Prestige")) or tonumber(v8.Prestige) or 0
-	local n2 = tonumber(v8.NewXP) or 0
-	local v10 = tonumber
-	local v11 = v9.GetLevel(n2)
-	local n3 = v10(v11) or 1
+	n3 = n3 or tonumber(localPlayer:GetAttribute("Level")) or 1
 	local num = tonumber(Hub.AutoPrestige.lastKnownPrestige)
 	Hub.AutoPrestige.lastKnownPrestige = lastKnownPrestige
 
@@ -2292,24 +2271,15 @@ Hub.AutoPrestige.Check = function()
 	end
 
 	if Hub.AutoPrestige.waitingForServer then
-		if not (lastKnownPrestige > (tonumber(Hub.AutoPrestige.requestedPrestige) or lastKnownPrestige) or n3 < 100) then
+		local timedOut = os.clock() - (Hub.AutoPrestige.lastRequestAt or 0) >= 15
+		if not (timedOut or lastKnownPrestige > (tonumber(Hub.AutoPrestige.requestedPrestige) or lastKnownPrestige) or n3 < 100) then
 			return false
 		end
 		Hub.AutoPrestige.waitingForServer = false
 		Hub.AutoPrestige.requestedPrestige = nil
 	end
 
-	local flag7 = n3 < 100
-	local flag8
-
-	if flag7 then
-		flag8 = flag7
-	else
-		local lastRequestAt = Hub.AutoPrestige.lastRequestAt
-		flag8 = os.clock() - lastRequestAt < 15
-	end
-
-	if flag8 then
+	if n3 < 100 or os.clock() - (Hub.AutoPrestige.lastRequestAt or 0) < 15 then
 		return false
 	end
 	Hub.AutoPrestige.waitingForServer = true
@@ -9192,7 +9162,7 @@ do
 		local okPaint = pcall(function()
 			local paintSignal = DrawingImmediate.GetPaint(15)
 			assert(paintSignal and type(paintSignal.Connect) == "function")
-			paintSignal:Connect(function()
+			local conn = paintSignal:Connect(function()
 				if not foxnameMM2Runtime.alive or isTerminated then
 					return
 				end
@@ -9202,6 +9172,9 @@ do
 					end
 				end
 			end)
+			if conn then
+				trackConn(conn)
+			end
 		end)
 		if not okPaint then
 			hasDrawingImmediate = false
@@ -9225,13 +9198,12 @@ do
 				local l = Drawing.new("Line")
 				l.Thickness = arg or 2
 				l.Color = Color3.new(1, 1, 1)
-				l.Transparency = 1
 				l.Visible = false
 				return l
-		end)
-		if ok and line then
-			return line
-		end
+			end)
+			if ok and line then
+				return line
+			end
 		end
 
 		local frame = Instance.new("Frame")
@@ -9283,7 +9255,7 @@ do
 			arg.To = arg3
 			arg.Visible = true
 			return
-		elseif typeof(arg) ~= "Instance" and type(arg.From) ~= "nil" then
+		elseif typeof(arg) ~= "Instance" then
 			if backgroundColor3 then
 				arg.Color = backgroundColor3
 			end
@@ -11442,9 +11414,10 @@ do
 		return ok2, ok2 and nil or tostring(result2)
 	end
 
-	Hub.CoinFarm.FetchServerCandidates = function(arg, arg2, arg3)
+	Hub.CoinFarm.FetchServerCandidates = function(arg, arg2, arg3, minPlayers)
 		local tbl7 = {}
 		local n2 = math.clamp(math.floor(tonumber(arg3) or 2), 1, 3)
+		local minCount = math.max(0, math.floor(tonumber(minPlayers) or 0))
 		arg2 = type(arg2) == "table" and arg2 or {}
 		local nextPageCursor = nil
 
@@ -11491,7 +11464,7 @@ do
 					local n3 = tonumber(type(v9) == "table" and v9.playing) or 0
 					local n4 = tonumber(type(v9) == "table" and v9.maxPlayers) or 0
 
-					if flag7 ~= "" and flag7 ~= tostring(game.JobId) and not arg2[flag7] and n4 > n3 then
+					if flag7 ~= "" and flag7 ~= tostring(game.JobId) and not arg2[flag7] and n4 > n3 and n3 >= minCount then
 						table.insert(tbl7, { id = flag7, playing = n3, safe = n4 - n3 >= 2, randomOrder = math.random() })
 					end
 				end
@@ -11577,14 +11550,11 @@ do
 	end
 
 	Hub.CoinFarm.StartLowPlayerServerHop = function()
-		local serverHopRunning = Hub.CoinFarm.serverHopRunning or not Hub.CoinFarm.enabled or not Hub.CoinFarm.serverHopLowPlayers or Hub.RoundState.active
-
-		if not serverHopRunning then
-			local serverHopPlayerThreshold = Hub.CoinFarm.serverHopPlayerThreshold
-			serverHopRunning = #Players:GetPlayers() > serverHopPlayerThreshold
+		if Hub.CoinFarm.serverHopRunning or not Hub.CoinFarm.serverHopLowPlayers then
+			return false
 		end
-
-		if serverHopRunning then
+		local threshold = math.clamp(math.floor(tonumber(Hub.CoinFarm.serverHopPlayerThreshold) or 4), 1, 6)
+		if #Players:GetPlayers() > threshold then
 			return false
 		end
 		Hub.CoinFarm.serverHopRunning = true
@@ -11596,10 +11566,10 @@ do
 			fn35()
 			Hub.CoinFarm.failedServerJobIds = Hub.CoinFarm.failedServerJobIds or {}
 			local failedServerJobIds = Hub.CoinFarm.failedServerJobIds
-			local v9 = Hub.CoinFarm.FetchServerCandidates(game.PlaceId, failedServerJobIds, 2)
+			local v9 = Hub.CoinFarm.FetchServerCandidates(game.PlaceId, failedServerJobIds, 2, threshold + 1)
 
 			for i = 1, math.min(#v9, 8) do
-				if not Hub.CoinFarm.enabled or not Hub.CoinFarm.serverHopLowPlayers then
+				if not Hub.CoinFarm.serverHopLowPlayers then
 					Hub.CoinFarm.serverHopRunning = false
 					return
 				end
@@ -11621,7 +11591,7 @@ do
 				task.wait(2)
 			end
 
-			if Hub.CoinFarm.enabled and Hub.CoinFarm.serverHopLowPlayers then
+			if Hub.CoinFarm.serverHopLowPlayers then
 				if Hub.CoinFarm.TryServerTeleport(game.PlaceId, nil, 8) then
 					local jobId = game.JobId
 
@@ -11855,6 +11825,9 @@ do
 		while foxnameMM2Runtime.alive and not isTerminated do
 			if Hub.CoinFarm.enabled and Hub.CoinFarm.antiBotEnabled and not Hub.CoinFarm.serverHopRunning then
 				Hub.CoinFarm.StartAntiBotServerHop()
+			end
+			if Hub.CoinFarm.serverHopLowPlayers and not Hub.CoinFarm.serverHopRunning then
+				Hub.CoinFarm.StartLowPlayerServerHop()
 			end
 
 			task.wait(3)
@@ -17430,6 +17403,9 @@ Hub.CoinFarm.serverHopControl = Tabs.Farm:Toggle({
 	Default = false,
 	Callback = function(arg)
 		Hub.CoinFarm.serverHopLowPlayers = arg and true or false
+		if Hub.CoinFarm.serverHopLowPlayers and type(Hub.CoinFarm.StartLowPlayerServerHop) == "function" then
+			task.defer(Hub.CoinFarm.StartLowPlayerServerHop)
+		end
 	end,
 })
 
@@ -17440,6 +17416,9 @@ Hub.CoinFarm.serverHopThresholdControl = Tabs.Farm:Slider({
 	Step = 1,
 	Callback = function(arg)
 		Hub.CoinFarm.serverHopPlayerThreshold = math.clamp(math.floor(tonumber(arg) or 4), 1, 6)
+		if Hub.CoinFarm.serverHopLowPlayers and type(Hub.CoinFarm.StartLowPlayerServerHop) == "function" then
+			task.defer(Hub.CoinFarm.StartLowPlayerServerHop)
+		end
 	end,
 })
 
@@ -18529,19 +18508,12 @@ trackConn(RunService.RenderStepped:Connect(function()
 				end
 
 				if Hub.LineESP then
-					if Hub.ESPRenderCache.lineInterval <= now - (v9._lastLineUpdate or 0) then
-						v9._lastLineUpdate = now
-						local v13, v14 = currentCamera2:WorldToViewportPoint(head.Position)
+					local v13 = currentCamera2:WorldToViewportPoint(head.Position)
 
-						if v14 and v13.Z > 0 then
-							local vector2 = Vector2.new
-							local clamp = math.clamp
-							local y = v13.Y
-							local y2 = viewportSize.Y
-							fn16(v9.Line, Vector2.new(viewportSize.X * 0.5, 0), vector2(math.clamp(v13.X, 0, viewportSize.X), clamp(y, 0, y2)), color)
-						else
-							v9.Line.Visible = false
-						end
+					if v13.Z > 0 then
+						fn16(v9.Line, Vector2.new(viewportSize.X * 0.5, 0), Vector2.new(math.clamp(v13.X, 0, viewportSize.X), math.clamp(v13.Y, 0, viewportSize.Y)), color)
+					else
+						v9.Line.Visible = false
 					end
 				else
 					v9.Line.Visible = false
@@ -22587,8 +22559,13 @@ Hub.SetupInfiniteJump = function()
 		Hub.JumpConnection:Disconnect()
 	end
 
+	local lastJumpAt = 0
 	Hub.JumpConnection = UserInputService.JumpRequest:Connect(function()
 		if not Hub.InfiniteJumpEnabled then
+			return
+		end
+		local now = os.clock()
+		if now - lastJumpAt < 0.2 then
 			return
 		end
 		local character_ = localPlayer.Character
@@ -22597,7 +22574,8 @@ Hub.SetupInfiniteJump = function()
 		end
 		local humanoid = character_:FindFirstChildOfClass("Humanoid")
 
-		if humanoid then
+		if humanoid and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then
+			lastJumpAt = now
 			humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 		end
 	end)
